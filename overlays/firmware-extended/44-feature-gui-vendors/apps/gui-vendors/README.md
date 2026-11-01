@@ -90,6 +90,27 @@ make test                                  # native host unit tests
 ./dev.sh make -C overlays/firmware-extended/44-feature-gui-vendors/apps/gui-vendors CROSS_COMPILE=aarch64-linux-gnu-
 ```
 
+### Analyzer
+
+`scripts/analyze_gui.py` (python3-capstone 5.x only) fails the build on
+anything it cannot explain:
+
+- loop-carried pointers are tracked as value sets bounded by the loop's trip
+  count, and an unbounded one that may reach the table or button array is an
+  error;
+- every use of a table reference must stay inside the table (patched) or past
+  its end (the nozzle table, kept), never both and never below it;
+- the button-array pointer may only be used for scaled slot accesses in a loop
+  counted up by one from zero to the row count (or saved as a callee-saved
+  register);
+- vendor-index compares with `rows-1` must be upper bounds (`b.hi/gt/ls/le`);
+- site counts must match the known layout.
+
+The build also runs `--dry-run-apply`, which patches a copy in memory and
+re-disassembles every site. `test/run.sh` runs the analyzer on every
+`tmp/extracted-*` GUI and on mutated copies it must reject (about 2 minutes
+per firmware).
+
 ### Self-test with the real GUI under qemu-user
 
 No display is needed: the self-test exits before the GUI's `main`.

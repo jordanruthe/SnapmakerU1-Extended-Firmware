@@ -34,14 +34,14 @@ try:
 except ImportError:
     sys.exit("analyze_gui: python3-capstone is required (apt install python3-capstone)")
 
-if hasattr(capstone, 'CS_ARCH_ARM64'):
-    CS_ARCH = capstone.CS_ARCH_ARM64
-    from capstone import arm64 as _cs
-    OP_REG, OP_IMM, OP_MEM = _cs.ARM64_OP_REG, _cs.ARM64_OP_IMM, _cs.ARM64_OP_MEM
-else:  # capstone >= 6
-    CS_ARCH = capstone.CS_ARCH_AARCH64
-    from capstone import aarch64 as _cs
-    OP_REG, OP_IMM, OP_MEM = _cs.AARCH64_OP_REG, _cs.AARCH64_OP_IMM, _cs.AARCH64_OP_MEM
+# Operand details and register access lists differ between capstone major
+# versions (4 rejects every binary, 6 renamed the AArch64 API), and the
+# analysis was verified with 5.x only.
+if capstone.cs_version()[0] != 5:
+    sys.exit('analyze_gui: capstone 5.x is required, found %d.%d' % capstone.cs_version()[:2])
+CS_ARCH = capstone.CS_ARCH_ARM64
+from capstone import arm64 as _cs  # noqa: E402
+OP_REG, OP_IMM, OP_MEM = _cs.ARM64_OP_REG, _cs.ARM64_OP_IMM, _cs.ARM64_OP_MEM
 
 # Expected number of sites per kind for the known GUI layout. A different
 # count means the GUI changed and the result must be reviewed by hand; use
@@ -69,6 +69,7 @@ UNCOND = ('b', 'ret', 'br', 'braa', 'brab', 'retaa', 'retab')
 CONDBR = ('cbz', 'cbnz', 'tbz', 'tbnz')
 CALLER_SAVED = tuple('x%d' % i for i in range(19)) + ('x30',)
 ARGS = tuple('x%d' % i for i in range(8))
+COMPARES = ('cmp', 'cmn', 'tst', 'ccmp', 'ccmn')
 
 
 class AnalysisError(Exception):
@@ -129,9 +130,12 @@ def decode_one(md, code, pc):
             else:
                 ops.append(('?',))
         rd, wr = i.regs_access()
+        wr = tuple(norm(i.reg_name(x)) for x in wr)
+        if i.mnemonic in COMPARES:  # capstone lists the compared register as written
+            wr = tuple(x for x in wr if x == 'nzcv')
         out.append(Insn(i.address, i.mnemonic, i.op_str, tuple(ops), bool(i.writeback),
                         bool(getattr(i, 'post_index', False)),
-                        tuple(norm(i.reg_name(x)) for x in wr),
+                        wr,
                         tuple(norm(i.reg_name(x)) for x in rd),
                         struct.unpack('<I', i.bytes)[0]))
     return out
@@ -143,6 +147,7 @@ class Gui:
         with open(path, 'rb') as f:
             self.data = f.read()
         self.sha256 = hashlib.sha256(self.data).hexdigest()
+        self._caps = {}
         self._parse_elf()
         self._decode_text()
         self._index()
@@ -328,6 +333,136 @@ class Gui:
                 vals.add(None)
         return vals
 
+    def loop_of(self, pc):
+        """Innermost backward-branch loop [head, latch] containing pc."""
+        best = None
+        for p in range(pc, min(pc + 0x400, self.text_hi), 4):
+            i = self.ins.get(p)
+            if i and i.is_branch() and i.target() <= pc:
+                if best is None or i.target() > best[0]:
+                    best = (i.target(), p)
+        return best
+
+    def loop_cap(self, pc, reg):
+        """(lo, hi) bounding the values `reg` takes at pc inside a counted
+        loop, or None. The loop must have a single entry and a single back
+        edge `cmp Wk, #n; b.cc head`, k must start from constants and step by
+        a constant on every iteration, and reg may only be advanced by
+        non-negative constants in the body."""
+        key = (pc, reg)
+        if key not in self._caps:
+            self._caps[key] = self._loop_cap(pc, reg)
+        return self._caps[key]
+
+    def _loop_cap(self, pc, reg):
+        loop = self.loop_of(pc)
+        if loop is None:
+            return None
+        head, latch = loop
+        body = range(head, latch + 4, 4)
+        lb, c = self.ins[latch], self.ins.get(latch - 4)
+        if not lb.mn.startswith('b.') or c is None or not is_cmp_imm(c):
+            return None
+        for p in body:
+            for q in self.preds.get(p, []):
+                if (q not in body and p != head) or (p == head and q in body and q != latch):
+                    return None
+        k, limit, cond = c.ops[0][1], cmp_imm(c.word), lb.mn[2:]
+        if (k in CALLER_SAVED or reg in CALLER_SAVED) and any(self.ins[p].mn in ('bl', 'blr') for p in body):
+            return None  # a call may change them
+        kw = [p for p in body if k in self.ins[p].w]
+        if len(kw) != 1:
+            return None
+        inc = self.ins[kw[0]]
+        if inc.mn != 'add' or len(inc.ops) != 3 or inc.ops[1] != ('r', k) or inc.ops[2][0] != 'i' or inc.ops[2][3]:
+            return None
+        step = inc.ops[2][1]
+        for p in range(head, kw[0], 4):  # nothing may skip the increment
+            i = self.ins[p]
+            if i.is_branch() and kw[0] < i.target() <= latch:
+                return None
+        delta = 0
+        for p in body:
+            i = self.ins[p]
+            if reg not in i.w:
+                continue
+            m = i.mem()
+            if i.mn == 'add' and len(i.ops) == 3 and i.ops[1] == ('r', reg) and i.ops[2][0] == 'i' and not i.ops[2][3]:
+                delta += i.ops[2][1]
+            elif m and m[1] == reg and i.wb and reg not in [o[1] for o in i.ops[:-1] if o[0] == 'r']:
+                d = i.ops[-1][1] if i.post else m[3]
+                if d < 0:
+                    return None
+                delta += d
+            else:
+                return None
+        inits, starts = set(), set()
+        for q in self.preds[head]:
+            if q in body:
+                continue
+            for r, out in ((k, inits), (reg, starts)):
+                if r in self.ins[q].w:
+                    vals = self.value_def(q, r)
+                else:
+                    vals = self.const_value(q, r) if r == reg else self.mov_imm_value(q, r)
+                if None in vals:
+                    return None
+                out |= vals
+        if not inits or not starts or step <= 0:
+            return None
+        trips = 0
+        for k0 in inits:
+            if cond == 'ne':
+                if k0 >= limit or (limit - k0) % step:
+                    return None  # would wrap around
+                n = (limit - k0) // step
+            elif cond in ('lt', 'lo', 'cc'):
+                n = max(1, -(-(limit - k0) // step))
+            elif cond in ('le', 'ls'):
+                n = max(1, (limit - k0) // step + 1)
+            else:
+                return None
+            trips = max(trips, n + 1)  # +1: k may be compared before or after the step
+        return min(starts), max(starts) + trips * delta
+
+    def is_callee_save(self, i, reg):
+        """`str/stp reg, [sp, #off]` of a callee-saved register whose stack
+        slot the function only ever reloads into the same register."""
+        m = i.mem()
+        if i.mn not in ('str', 'stp') or not m or m[1] != 'sp' or m[2] or i.wb or \
+                reg not in tuple('x%d' % n for n in range(19, 30)):
+            return False
+        regs = [o[1] for o in i.ops if o[0] == 'r']
+        if regs.count(reg) != 1 or any(not o.startswith('x') for o in regs):
+            return False
+        slot = m[3] + 8 * regs.index(reg)
+        lo, hi = self.func_range(i.pc)
+        for pc in range(lo, hi, 4):
+            j = self.ins.get(pc)
+            jm = j.mem() if j else None
+            if not jm or jm[1] != 'sp' or jm[2] or j.mn not in ('ldr', 'ldp', 'str', 'stp'):
+                continue
+            off = 0 if j.post else jm[3]
+            for k, o in enumerate(x for x in j.ops if x[0] == 'r'):
+                if off + 8 * k == slot and o[1] != reg:
+                    return False
+        return True
+
+    def mov_imm_value(self, pc, reg):
+        """Constants reg can hold just before pc, from `mov reg, #imm` only."""
+        vals = set()
+        for kind, p in self.reaching_defs(pc, reg):
+            vals |= self.value_def(p, reg) if kind == 'def' else {None}
+        return vals
+
+    def value_def(self, p, reg):
+        i = self.ins[p]
+        if i.mn in ('mov', 'movz') and len(i.ops) == 2 and i.ops[1][0] == 'i' and not i.ops[1][3]:
+            return {i.ops[1][1]}
+        if reg in i.w:
+            return self.const_value(p + 4, reg) if (p + 4) in self.ins and self.preds.get(p + 4) == [p] else {None}
+        return {None}
+
     def def_chain(self, pc, reg, depth=0):
         """Follow simple register moves/extensions back to their origins.
 
@@ -352,45 +487,141 @@ class Gui:
 
 # ---- forward value tracking ----------------------------------------------
 
-def track(g, start_pc, init, interesting, max_steps=20000, max_per_pc=6):
-    """Propagate constant register values forward from start_pc.
+class Wide:
+    """A register that may hold one of several region values at a join
+    point: a small set of values, or once that grows past WIDE_MAX (a pointer
+    advanced by a loop) a range whose lo/hi is None where it kept growing."""
+    __slots__ = ('vals', 'lo', 'hi')
 
-    Follows branches (both ways for conditional ones), stops at ret/br, and
-    keeps callee-saved registers across calls. Returns events:
+    def __init__(self, vals=None, lo=None, hi=None):
+        self.vals = frozenset(vals) if vals is not None else None
+        if self.vals is not None:
+            lo, hi = min(self.vals), max(self.vals)
+        self.lo, self.hi = lo, hi
+
+    def __eq__(self, other):
+        return isinstance(other, Wide) and (self.vals, self.lo, self.hi) == (other.vals, other.lo, other.hi)
+
+    def __hash__(self):
+        return hash((self.vals, self.lo, self.hi))
+
+    def __repr__(self):
+        if self.vals is not None:
+            return '{%s}' % ', '.join(map(hex, sorted(self.vals)))
+        return '[%s..%s]' % ('-inf' if self.lo is None else hex(self.lo), 'inf' if self.hi is None else hex(self.hi))
+
+    def shift(self, d):
+        if self.vals is not None:
+            return Wide({v + d for v in self.vals})
+        return Wide(lo=None if self.lo is None else self.lo + d, hi=None if self.hi is None else self.hi + d)
+
+    def clamp(self, lo, hi):
+        """Values within [lo, hi], e.g. a loop's provable range."""
+        if self.vals is not None:
+            vals = {v for v in self.vals if lo <= v <= hi}
+            return Wide(vals) if vals else self
+        return Wide(lo=lo if self.lo is None else max(lo, self.lo), hi=hi if self.hi is None else min(hi, self.hi))
+
+    def overlaps(self, lo, hi):
+        if self.vals is not None:
+            return any(lo <= v < hi for v in self.vals)
+        return (self.lo is None or self.lo < hi) and (self.hi is None or self.hi >= lo)
+
+    def start_in(self, lo, hi):
+        """A widened walk that starts inside [lo, hi): it was derived from an
+        in-range value, whose computation is reported on its own."""
+        if self.vals is not None:
+            return lo <= self.lo < hi
+        return (self.lo is not None and lo <= self.lo < hi) or \
+               (self.lo is None and self.hi is not None and lo <= self.hi < hi)
+
+
+WIDE_MAX = 16
+
+
+def join_value(old, new):
+    if old == new:
+        return old
+    o = old if isinstance(old, Wide) else Wide({old})
+    n = new if isinstance(new, Wide) else Wide({new})
+    if o.vals is not None and n.vals is not None and len(o.vals | n.vals) <= WIDE_MAX:
+        return Wide(o.vals | n.vals)
+    lo = o.lo if o.lo is not None and n.lo is not None and n.lo >= o.lo else None
+    hi = o.hi if o.hi is not None and n.hi is not None and n.hi <= o.hi else None
+    return Wide(lo=lo, hi=hi)
+
+
+def join_state(old, new):
+    """Registers absent from a state hold no region value; the join keeps
+    every region value either side may hold."""
+    out = dict(old)
+    for r, v in new.items():
+        out[r] = join_value(out[r], v) if r in out else v
+    return out
+
+
+def track(g, start_pc, init, interesting, max_steps=200000):
+    """Propagate region-pointer register values forward from start_pc.
+
+    Follows branches (both ways for conditional ones), stops at ret/br and
+    tail calls, and keeps callee-saved registers across calls. States are joined per pc and
+    values that change around a loop are widened (Wide), so this always
+    terminates; hitting max_steps anyway is an error, never a silent cut-off.
+    Returns events:
       ('add', pc, src_value, value, rd)
       ('mem', pc, ea, insn)            immediate-offset access
       ('idx', pc, base, insn)          register-offset access
       ('use', pc, {reg: value}, insn)  any other read of a tracked register
       ('call', pc, {reg: value}, insn) tracked value in an argument register
+      ('wide', pc, {reg: Wide}, insn)  any read of a widened register
     """
     ev = []
     work = [(start_pc, dict(init))]
-    seen = {}
+    state_at = {}
     steps = 0
+
+    def keep(st, reg, v):
+        if isinstance(v, Wide) and v.overlaps(*interesting) or not isinstance(v, Wide) and \
+                interesting[0] <= v < interesting[1]:
+            st[reg] = v
+        else:
+            st.pop(reg, None)
+
     while work:
         pc, st = work.pop()
         while st:
             steps += 1
             if steps > max_steps:
-                return ev
-            n = seen.setdefault(pc, set())
-            key = tuple(sorted(st.items()))
-            if key in n or len(n) >= max_per_pc:
-                break
-            n.add(key)
+                fail('track(%#x): step limit exceeded' % start_pc)
+            old = state_at.get(pc)
+            if old is not None:
+                st = join_state(old, st)
+                for r, v in st.items():
+                    if isinstance(v, Wide):
+                        cap = g.loop_cap(pc, r)
+                        if cap is not None:
+                            st[r] = v.clamp(*cap)
+                if st == old:
+                    break
+            state_at[pc] = st
+            st = dict(st)
             i = g.ins.get(pc)
             if i is None:
                 break
-            used = {x: st[x] for x in i.r if x in st}
+            wide = {x: st[x] for x in i.r if isinstance(st.get(x), Wide)}
+            used = {x: st[x] for x in i.r if x in st and x not in wide}
+            if wide and not (i.mn == 'mov' and len(i.ops) == 2 and i.ops[1][0] == 'r'):
+                ev.append(('wide', pc, wide, i))
             if i.mn in ('add', 'sub') and len(i.ops) == 3 and i.ops[2][0] == 'i' and i.ops[1][0] == 'r' \
                     and i.ops[1][1] in st:
                 imm = i.ops[2][1] << (i.ops[2][3] if i.ops[2][2] else 0)
-                v = st[i.ops[1][1]] + (imm if i.mn == 'add' else -imm)
-                ev.append(('add', pc, st[i.ops[1][1]], v, i.ops[0][1]))
-                if interesting(v):
-                    st[i.ops[0][1]] = v
+                src = st[i.ops[1][1]]
+                d = imm if i.mn == 'add' else -imm
+                if isinstance(src, Wide):
+                    keep(st, i.ops[0][1], src.shift(d))
                 else:
-                    st.pop(i.ops[0][1], None)
+                    ev.append(('add', pc, src, src + d, i.ops[0][1]))
+                    keep(st, i.ops[0][1], src + d)
                 pc += 4
                 continue
             if i.mn == 'mov' and len(i.ops) == 2 and i.ops[1][0] == 'r' and i.ops[1][1] in st:
@@ -400,25 +631,31 @@ def track(g, start_pc, init, interesting, max_steps=20000, max_per_pc=6):
             m = i.mem()
             if m is not None and m[1] in st:
                 base = st[m[1]]
-                if m[2]:
-                    ev.append(('idx', pc, base, i))
-                else:
-                    ev.append(('mem', pc, base if i.post else base + m[3], i))
+                if not isinstance(base, Wide):
+                    if m[2]:
+                        ev.append(('idx', pc, base, i))
+                    else:
+                        ev.append(('mem', pc, base if i.post else base + m[3], i))
                 other = {k: v for k, v in used.items() if k != m[1]}
                 if other:
                     ev.append(('use', pc, other, i))
                 for x in i.w:
                     st.pop(x, None)
                 if i.wb:
-                    nv = base + (i.ops[-1][1] if i.post else m[3])
-                    if interesting(nv):
-                        st[m[1]] = nv
+                    d = i.ops[-1][1] if i.post else m[3]
+                    keep(st, m[1], base.shift(d) if isinstance(base, Wide) else base + d)
                 pc += 4
                 continue
-            if i.mn in ('bl', 'blr'):
-                args = {x: st[x] for x in ARGS if x in st}
+            tail = i.mn == 'b' and i.target() in g.entries and not g.func_range(pc)[0] <= i.target() <= pc
+            if i.mn in ('bl', 'blr') or tail:
+                args = {x: st[x] for x in ARGS if x in st and not isinstance(st[x], Wide)}
                 if args:
                     ev.append(('call', pc, args, i))
+                wargs = {x: st[x] for x in ARGS if isinstance(st.get(x), Wide)}
+                if wargs:
+                    ev.append(('wide', pc, wargs, i))
+                if tail:  # the callee only saves/restores callee-saved registers
+                    break
                 for x in CALLER_SAVED:
                     st.pop(x, None)
                 pc += 4
@@ -446,8 +683,7 @@ def scan_region_refs(g, lo, hi, window=0x10000):
     out = []
     page_lo = (lo & ~0xfff) - window
     page_hi = (hi + 0xfff) & ~0xfff
-    track_lo, track_hi = page_lo, page_hi + 0x1000
-    inter = lambda v: track_lo <= v < track_hi
+    inter = (page_lo, page_hi + 0x1000)
     seen = set()
     for pc, i in g.ins.items():
         if i.mn == 'adr' and lo <= i.ops[1][1] < hi:
@@ -460,6 +696,9 @@ def scan_region_refs(g, lo, hi, window=0x10000):
                     k = (e[1], e[3], 'add')
                 elif e[0] == 'mem' and lo <= e[2] < hi and not lo <= e[2] - (0 if e[3].post else e[3].mem()[3]) < hi:
                     k = (e[1], e[2], 'mem')
+                elif e[0] == 'wide' and any(w.overlaps(lo, hi) and not w.start_in(lo, hi) for w in e[2].values()):
+                    fail('%s: loop-carried pointer %s may reach %#x..%#x'
+                         % (e[3], ', '.join('%s=%r' % kv for kv in e[2].items()), lo, hi))
                 else:
                     continue
                 if k not in seen:
@@ -550,7 +789,7 @@ class Analysis:
     def ref_events(self, i):
         """Forward events of the value produced by ref site i."""
         T = self.T
-        return track(self.g, i.pc + 4, {i.ops[0][1]: T}, lambda v: T - 0x1000 <= v < T + 0x2000)
+        return track(self.g, i.pc + 4, {i.ops[0][1]: T}, (T - 0x1000, T + 0x2000))
 
     def derive_stride(self):
         g = self.g
@@ -578,24 +817,32 @@ class Analysis:
         self.stride_evidence = sorted(next(iter(cands.values())))
 
     def loop_of(self, pc):
-        """Innermost backward-branch loop [head, latch] containing pc."""
-        best = None
-        g = self.g
-        for p in range(pc, min(pc + 0x400, g.text_hi), 4):
-            i = g.ins.get(p)
-            if i and i.is_branch() and i.target() <= pc:
-                if best is None or i.target() > best[0]:
-                    best = (i.target(), p)
-        return best
+        return self.g.loop_of(pc)
 
     def loop_bound(self, loop, ireg):
-        """`cmp ireg, #imm` right before the latch branch of loop."""
+        """`cmp ireg, #imm; b.ne|lo|lt head` latching a loop that counts ireg
+        up by one from zero, so the loop runs exactly #imm times."""
         g = self.g
-        latch = g.ins[loop[1]]
-        c = g.ins.get(loop[1] - 4)
-        if not latch.mn.startswith('b.') or c is None or not is_cmp_imm(c) or c.ops[0][1] != ireg:
-            fail('loop %#x..%#x: expected `cmp %s, #imm; b.cc` latch, found %s / %s'
-                 % (loop[0], loop[1], ireg, c, latch))
+        head, end = loop
+        latch = g.ins[end]
+        c = g.ins.get(end - 4)
+        if latch.mn not in ('b.ne', 'b.lo', 'b.lt', 'b.cc') or latch.target() != head or c is None or \
+                not is_cmp_imm(c) or c.ops[0][1] != ireg:
+            fail('loop %#x..%#x: expected `cmp %s, #imm; b.ne|lo|lt %#x` latch, found %s / %s'
+                 % (head, end, ireg, head, c, latch))
+        writes = [g.ins[p] for p in range(head, end, 4) if ireg in g.ins[p].w]
+        if len(writes) != 1 or writes[0].mn != 'add' or writes[0].ops[1] != ('r', ireg) or \
+                writes[0].ops[2][:2] != ('i', 1) or writes[0].ops[2][3]:
+            fail('loop %#x..%#x: %s is not counted up by one (%s)' % (head, end, ireg, '; '.join(map(str, writes))))
+        for p in range(head, writes[0].pc, 4):
+            i = g.ins[p]
+            if i.is_branch() and writes[0].pc < i.target() <= end:
+                fail('%s: skips the increment of %s in loop %#x..%#x' % (i, ireg, head, end))
+        for q in g.preds[head]:
+            if head <= q <= end:
+                continue
+            if (g.value_def(q, ireg) if ireg in g.ins[q].w else g.mov_imm_value(q, ireg)) != {0}:
+                fail('loop %#x..%#x: %s does not start at 0 (entry %#x)' % (head, end, ireg, q))
         return c
 
     def find_buttons_and_count_bounds(self):
@@ -643,12 +890,14 @@ class Analysis:
             self.button_sites.append((i, None))
         for i, _ in self.button_sites:
             idx = [e for e in track(g, i.pc + 4, {i.ops[0][1]: self.B},
-                                    lambda v: self.B - 0x1000 <= v < self.B + 0x1000)]
+                                    (self.B - 0x1000, self.B + 0x1000))]
+            # the register now holds the new array: the only allowed uses are
+            # scaled, loop-bounded slot accesses and callee-saved spills
             for e in idx:
-                if e[0] == 'mem' and self.B <= e[2] < self.B + 0x40:
-                    fail('%s: direct slot access %#x of the button array' % (e[3], e[2]))
-                if e[0] != 'idx' or e[2] != self.B:
+                if e[0] == 'use' and all(g.is_callee_save(e[3], r) for r in e[2]):
                     continue
+                if e[0] != 'idx' or e[2] != self.B:
+                    fail('%s: unsupported use of the button array pointer from %s (%s)' % (e[-1], i, e[0]))
                 m = e[3].mem()
                 if m[4] != 3:
                     fail('%s: button array access is not scaled by 8' % e[3])
@@ -688,27 +937,42 @@ class Analysis:
             fail('first row is %r' % self.vendors[0])
 
     def classify_table_refs(self):
-        """Refs whose value is only used for `add #off` with off >= table size
-        address the next (nozzle) table: those must keep the stock address."""
+        """Refs whose value is only used past the table end (`add #off` or a
+        load at offset >= table size) address the next (nozzle) table: those
+        must keep the stock address. Refs used inside the table are patched.
+        Anything below the table, or a ref used both ways, is an error."""
         size = self.rows * self.stride
         T = self.T
+        end = T + size
         self.table_sites, self.nozzle_sites = [], []
         for ref in self.table_refs:
             inside, beyond = [], []
+
+            def place(e, v):
+                if v < T:
+                    fail('%s: table ref %s reaches %#x, below the vendor table' % (e[-1], ref, v))
+                (beyond if v >= end else inside).append(e)
+
             for e in self.ref_events(ref):
                 if e[0] == 'add':
                     if e[2] == T:
-                        (beyond if e[3] >= T + size else inside).append(e)
+                        (beyond if e[3] >= end else inside).append(e)
                 elif e[0] in ('mem', 'idx'):
-                    if T <= (e[2]) < T + size:
-                        inside.append(e)
+                    place(e, e[2])
                 elif e[0] in ('use', 'call'):
-                    if any(T <= v < T + size for v in e[2].values()):
-                        inside.append(e)
+                    for v in e[2].values():
+                        place(e, v)
+                elif e[0] == 'wide':
+                    for w in e[2].values():
+                        if w.lo is None or w.lo < T:
+                            fail('%s: loop-carried table pointer %r from %s' % (e[3], w, ref))
+                        (beyond if w.lo >= end else inside).append(e)
             if inside and beyond:
                 fail('%s: value used both inside the vendor table and beyond it' % ref)
             if beyond:
-                self.nozzle_sites.append((ref, sorted({e[3] - T for e in beyond})))
+                offs = {e[3] - T for e in beyond if e[0] == 'add'} | \
+                       {e[2] - T for e in beyond if e[0] in ('mem', 'idx')}
+                self.nozzle_sites.append((ref, sorted(offs)))
             elif inside:
                 self.table_sites.append((ref, None))
             else:
@@ -795,6 +1059,12 @@ class Analysis:
                 from_arg = all(k == 'entry' for k, p in origins) and any(r == reg for _, r in stores)
                 from_call = all(k == 'call' for k, p in origins) and reg == 'x0'
                 if (from_v or from_arg) and cmp_imm(i.word) == self.rows - 1:
+                    nx = g.ins.get(pc + 4)
+                    cond = nx.mn[2:] if nx and nx.mn.startswith('b.') else \
+                        nx.text.split(',')[-1].strip() if nx and nx.mn in ('csel', 'csinc', 'cset', 'cinc') else None
+                    if cond not in ('gt', 'hi', 'le', 'ls'):
+                        fail('%s: vendor index compared with %d but not as an upper bound (next: %s)'
+                             % (i, self.rows - 1, nx))
                     self.maxidx_bounds[pc] = i
                 elif from_call:
                     self.unrelated.append(i)

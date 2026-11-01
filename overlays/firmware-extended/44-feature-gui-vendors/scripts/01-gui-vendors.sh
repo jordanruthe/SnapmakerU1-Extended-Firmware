@@ -14,7 +14,8 @@ set -eo pipefail
 
 echo ">> Analysing /usr/bin/gui..."
 mkdir -p "$1/usr/local/share/gui-vendors"
-python3 -I "$CUR_DIR/analyze_gui.py" "$1/usr/bin/gui" -o "$1/usr/local/share/gui-vendors/gui.patch"
+python3 -I "$CUR_DIR/analyze_gui.py" "$1/usr/bin/gui" -o "$1/usr/local/share/gui-vendors/gui.patch" \
+  --dry-run-apply --dry-run-rows 32
 
 echo ">> Setting up cross-compilation environment..."
 export CROSS_COMPILE=aarch64-linux-gnu-
