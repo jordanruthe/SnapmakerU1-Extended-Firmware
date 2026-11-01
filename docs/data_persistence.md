@@ -25,6 +25,8 @@ reboot
 
 The `/home/lava/printer_data` directory always persists, regardless of `/oem/.debug`.
 
+To back up or restore its `config` folder, use **Backup** in [Firmware Config](firmware_config.md#backup).
+
 ## Firmware Upgrades
 
 **Firmware upgrades automatically remove all persisted changes and delete `/oem/.debug`.**
