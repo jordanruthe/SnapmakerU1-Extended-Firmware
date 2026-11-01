@@ -274,6 +274,8 @@ Commands:
 - `open-filament-edit [1-4]` - from the home screen, open the filament type
   list (vendor buttons) of an extruder
 - `restart-gui` - kill the GUI, `lmd` respawns it after about 2 seconds
+- `reset` - redo the fake klippy setup and restart the GUI, if the GUI lost
+  the printer (extruders show `/`)
 - `stop` - kill QEMU
 
 State (disk image, serial log, `console.in`) is kept in
@@ -296,7 +298,9 @@ How it works and what to know:
   dialog. `start` instead runs `scripts/dev/fake-klippy.py`, a stand-in for
   Klipper's socket that gives Moonraker and the GUI a ready printer with four
   PLA extruders and applies `SET_PRINT_FILAMENT_CONFIG`. It does not simulate
-  anything else (temperatures, motion, printing).
+  anything else (temperatures, motion, printing). The real Klipper's init script is
+  replaced by a stub, because firmware-config restarts Klipper when a setting
+  changes.
 - The first-run wizard is skipped by writing `gui_config.json`.
 - The emulated GUI is slow right after boot: wait for a screenshot to settle
   before tapping, and use `restart-gui` (not a reboot) after changing the GUI.

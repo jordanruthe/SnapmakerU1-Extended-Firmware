@@ -34,6 +34,8 @@ usage: $0 <command> [args]
   open-filament-edit [n]    from the home screen, open the filament Edit dialog
                             of extruder n (1-4, default 1)
   restart-gui               kill the GUI; lmd respawns it (waits until ready)
+  reset                     redo the fake klippy setup and restart the GUI, e.g.
+                            when the GUI lost the printer (no reboot)
   stop                      kill QEMU
 
 State (disk image, serial log, pid) lives in \$GUI_TEST_DIR (default: ~/.cache/snapmaker-u1-gui-test),
@@ -123,7 +125,12 @@ setup_gui() {
   echo ">> Setting up fake klippy and GUI config"
   ssh_cmd 'cat > /tmp/fake-klippy.py && chmod 755 /tmp/fake-klippy.py' \
     < "$ROOT_DIR/scripts/dev/fake-klippy.py" || die "failed to copy fake-klippy.py"
+  # firmware-config restarts Klipper when a setting changes; the real one
+  # would take over the socket and fail, so stub its init script out.
   ssh_cmd '/etc/init.d/S60klipper stop >/dev/null 2>&1
+    printf "#!/bin/sh\necho \"klipper: replaced by fake-klippy (qemu-gui-test)\"\n" > /tmp/S60klipper-stub
+    chmod 755 /tmp/S60klipper-stub
+    grep -qs fake-klippy /etc/init.d/S60klipper || mount --bind /tmp/S60klipper-stub /etc/init.d/S60klipper
     for p in $(pgrep -u lava -x python3); do
       grep -qa klippy.py /proc/$p/cmdline && kill $p
     done
@@ -314,6 +321,7 @@ case "$cmd" in
   ssh) ssh_cmd "$@" ;;
   open-filament-edit) cmd_open_filament_edit "$@" ;;
   restart-gui) cmd_restart_gui ;;
+  reset) qemu_pid >/dev/null || die "QEMU is not running"; setup_gui ;;
   stop) cmd_stop ;;
   *) usage ;;
 esac
