@@ -75,6 +75,11 @@ Available actions:
 - **Revert Changes** - Remove configuration changes and disable data persistence
 - **Recover to Backup Firmware** - Restore previous firmware version
 
+### Backup
+
+- **Download Config Backup** - Download the `printer_data/config` folder (Klipper and Moonraker config, `extended/` settings) and the Moonraker database (web interface settings, login users, print history) as a `.tgz` archive. It includes HTTPS private keys, ACME/DNS credentials and web login users if present, so keep it private.
+- **Restore Config Backup** - Upload a backup to replace `printer_data/config`, and `printer_data/database` if the backup has one. Klipper and Moonraker are stopped during the restore. The replaced folders are kept as `config.pre-restore-<date>` and `database.pre-restore-<date>`. Only archives with top-level `config/` (containing `printer.cfg`) and optionally `database/` folders are accepted, such as one made with `tar czf backup.tgz -C /home/lava/printer_data config database`.
+
 ### Firmware Upgrade
 
 Upgrade firmware using one of two methods:

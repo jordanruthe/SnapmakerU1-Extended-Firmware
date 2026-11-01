@@ -1,0 +1,39 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# SPDX-PackageHomePage: https://github.com/paxx12-snapmaker-u1/SnapmakerU1-Extended-Firmware
+# SPDX-FileCopyrightText: Copyright (c) 2026 @paxx12
+
+actions:
+  backup:
+    items:
+      backup-config:
+        label: Download Config Backup
+        description: Download printer_data/config (including extended settings) and the Moonraker database (web interface settings, users, print history) as a .tgz archive.
+        confirm: "The backup includes HTTPS private keys (extended/tls/), ACME/DNS credentials and web login users if present. Store it somewhere safe. Continue?"
+        cmd:
+          - /usr/local/bin/config-backup.py
+          - /userdata/config-backup.tgz
+        message: "Creating config backup..."
+        download_file: /userdata/config-backup.tgz
+        download_name: "u1-config-backup-%Y%m%d-%H%M%S.tgz"
+
+      restore-config:
+        label: Restore Config Backup
+        description: Replace printer_data/config (and the Moonraker database, if the backup has one) with an uploaded backup. The current files are kept as config.pre-restore-<date> and database.pre-restore-<date>.
+        confirm: "Replace the current config with the uploaded backup? Klipper and Moonraker are stopped during the restore. Do not do this while printing."
+        upload_path: /userdata/config-restore.tgz
+        upload_accept: ".tgz,.tar.gz"
+        cmd:
+          - /bin/bash
+          - -c
+          - |
+            echo "Stopping Klipper and Moonraker..."
+            /etc/init.d/S61moonraker stop
+            /etc/init.d/S60klipper stop
+            /usr/local/bin/config-restore.py "$1"
+            rc=$?
+            echo "Starting Klipper and Moonraker..."
+            /etc/init.d/S60klipper start
+            /etc/init.d/S61moonraker start
+            exit $rc
+          - config-restore
+        message: "Restoring config backup..."

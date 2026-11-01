@@ -11,6 +11,8 @@ actions:
     label: Troubleshooting
   recovery:
     label: Recovery
+  backup:
+    label: Backup
   services:
     label: Services
   https:
