@@ -192,6 +192,18 @@ class LibraryTests(Base):
             for args in (('eSun', 'PLA+'), ('Polymaker', 'PLA', 'PolyTerra'), ('Generic', 'PLA')):
                 self.assertStock(*args)
 
+    def test_generic_entry_keeps_brand_stock_values(self):
+        stock_polyterra = self.get('Polymaker', 'PLA', 'PolyTerra', fp=self.stock_fp)['print_temp']
+        self.write({'filaments': [{'vendor': '', 'type': 'PLA', 'print_temp': 199, 'load_temp': 201}]})
+        # brand-specific stock value wins over a generic library entry
+        self.assertEqual(self.get('Polymaker', 'PLA', 'PolyTerra')['print_temp'], stock_polyterra)
+        # values the brand has no own stock key for still come from the entry
+        self.assertEqual(self.get('Polymaker', 'PLA', 'PolyTerra')['load_temp'], 201)
+        self.assertEqual(self.get('Acme', 'PLA')['print_temp'], 199)
+        # an entry for the brand itself still overrides its stock value
+        self.write({'filaments': [{'vendor': 'Polymaker', 'type': 'PLA', 'sub_type': 'PolyTerra', 'print_temp': 198}]}, mtime=2000000)
+        self.assertEqual(self.get('Polymaker', 'PLA', 'PolyTerra')['print_temp'], 198)
+
     def test_invalid_entry_skips_only_that_entry(self):
         self.write({'filaments': [
             {'vendor': 'Bad', 'type': 'PLA', 'print_temp': 'abc'},

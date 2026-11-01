@@ -41,7 +41,7 @@ resolves to.
          self.printer.register_event_handler("klippy:ready", self._ready)
  
      def _ready(self):
-@@ -1612,7 +1623,81 @@
+@@ -1612,7 +1623,88 @@
      def get_status(self, eventtime=None):
          return {}
  
@@ -93,7 +93,7 @@ resolves to.
 +        vendor, main_type, sub_type = norm(filament_vendor), norm(filament_main_type), norm(filament_sub_type)
 +        entries = [e for e in self._library_entries() if norm(e['type']) == main_type]
 +        if not entries:
-+            return None
++            return None, False
 +        # Same precedence as the stock tables: exact, any subtype, generic
 +        # vendor, generic vendor with any subtype. A blank vendor or subtype
 +        # matches like `generic`.
@@ -103,13 +103,20 @@ resolves to.
 +                ev, es = norm(e['vendor']), norm(e['sub_type'])
 +                if (ev in wildcard if want_vendor is None else ev == want_vendor) and \
 +                        (es in wildcard if want_sub is None else es == want_sub):
-+                    return e
-+        return None
++                    return e, want_vendor is None
++        return None, False
 +
      def _search_filament_param_value(self, dict_obj, filament_vendor, filament_main_type, filament_sub_type, key_name):
-+        entry = self._library_lookup(filament_vendor, filament_main_type, filament_sub_type)
++        entry, generic = self._library_lookup(filament_vendor, filament_main_type, filament_sub_type)
 +        if entry is None:
 +            return self._search_stock_param_value(dict_obj, filament_vendor, filament_main_type, filament_sub_type, key_name)
++        if generic:
++            # A generic entry must not override a brand's own stock values
++            # (e.g. a blank-brand PLA entry vs Snapmaker PLA).
++            for sub_type in (filament_sub_type, 'generic'):
++                key = f'{filament_vendor}_{filament_main_type}_{sub_type}_{key_name}'
++                if key in dict_obj:
++                    return dict_obj[key]
 +        if entry.get(key_name) is not None:
 +            return entry[key_name]
 +        value = self._search_stock_param_value(dict_obj, filament_vendor, filament_main_type, filament_sub_type, key_name)
@@ -123,7 +130,7 @@ resolves to.
          key = f'{filament_vendor}_{filament_main_type}_{filament_sub_type}_{key_name}'
          default_fill = 'generic'
  
-@@ -1824,6 +1909,21 @@
+@@ -1824,6 +1916,21 @@
  
          return is_allow
  
@@ -133,7 +140,7 @@ resolves to.
 +        sub_type = gcmd.get('SUBTYPE', '')
 +        nozzle_diameter = gcmd.get_float('NOZZLE', 0.4)
 +        nozzle_volume_type = gcmd.get('VOLUME_TYPE', 'standard')
-+        entry = self._library_lookup(vendor, main_type, sub_type)
++        entry, _ = self._library_lookup(vendor, main_type, sub_type)
 +        params = self.get_filament_parameters(vendor, main_type, sub_type, nozzle_diameter, nozzle_volume_type)
 +        gcmd.respond_info("[filament_parameters] %s %s %s: library entry %s\n"
 +                          "load_temp=%s unload_temp=%s print_temp=%s is_soft=%s flow_k=%.4f" % (
