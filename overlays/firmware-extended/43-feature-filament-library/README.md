@@ -2,7 +2,8 @@
 
 Lets Klipper use the user filament library (`extended/filament_library.json`,
 managed from the `/filament/` web UI) when it picks temperatures for
-load/unload/print.
+load/unload/print. User documentation: `docs/filament_library.md`. Showing the
+entries on the touchscreen is done by `44-feature-gui-vendors`.
 
 ## Patch
 
