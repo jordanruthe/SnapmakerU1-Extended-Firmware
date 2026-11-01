@@ -1,0 +1,147 @@
+filament_parameters: Read user filaments from `extended/filament_library.json`
+
+Entries from the Filament Manager's filament library override load, unload
+and print temperatures and `is_soft` for their vendor/type/subtype. Values an
+entry leaves out fall back to the stock tables, then to its `base_type`, so
+a type the stock tables do not know (e.g. `PLA+`) still resolves `vol_speed`
+instead of discarding every parameter and loading at 250 C. The file is
+re-read when it changes. `FILAMENT_LIBRARY_QUERY` reports what a filament
+resolves to.
+---
+--- a/klippy/extras/filament_parameters.py
++++ b/klippy/extras/filament_parameters.py
+@@ -1,4 +1,4 @@
+-import copy, os, logging
++import copy, os, logging, json
+ 
+ FILAMENT_LOAD_TEMP_UNKNOWN                      = 250
+ FILAMENT_UNLOAD_TEMP_UNKNOWN                    = 250
+@@ -57,6 +57,12 @@
+ FILAMENT_PARA_STANDARD_08_CFG_FILE              = 'filament_para_standard_08.json'
+ FILAMENT_PARA_HIGH_FLOW_04_CFG_FILE             = 'filament_para_high_flow_04.json'
+ 
++# User filament library, edited from the Filament Manager. Entries override
++# the parameters below for their vendor/type/subtype; anything an entry leaves
++# out falls back to the stock tables, then to the tables of its `base_type`.
++FILAMENT_LIBRARY_FILE                           = 'extended/filament_library.json'
++FILAMENT_LIBRARY_TEMP_KEYS                      = ('load_temp', 'unload_temp', 'print_temp')
++
+ FILAMENT_PARA_CFG_STANDARD_02_DEFAULT = {
+     # generic parameters
+     'version': FILAMENT_PARAMETER_VERSION,
+@@ -1576,6 +1582,11 @@
+         gcode = self.printer.lookup_object('gcode')
+         gcode.register_command('FILAMENT_PARA_GET_ALL_INFO',
+                                self.cmd_FILAMENT_PARA_GET_ALL_INFO)
++        self._library_path = os.path.join(self.printer.get_config_dir(), FILAMENT_LIBRARY_FILE)
++        self._library_mtime = None
++        self._library = []
++        gcode.register_command('FILAMENT_LIBRARY_QUERY',
++                               self.cmd_FILAMENT_LIBRARY_QUERY)
+         self.printer.register_event_handler("klippy:ready", self._ready)
+ 
+     def _ready(self):
+@@ -1612,7 +1623,81 @@
+     def get_status(self, eventtime=None):
+         return {}
+ 
++    def _library_entries(self):
++        # Re-read on change, so saving from the Filament Manager applies to the
++        # next load/unload without restarting Klipper.
++        try:
++            mtime = os.stat(self._library_path).st_mtime
++        except OSError:
++            mtime = None
++        if mtime == self._library_mtime:
++            return self._library
++        self._library_mtime = mtime
++        self._library = []
++        if mtime is None:
++            return self._library
++        try:
++            with open(self._library_path, 'r') as f:
++                filaments = json.load(f).get('filaments', [])
++            for item in filaments:
++                if not isinstance(item, dict) or not str(item.get('type') or '').strip():
++                    continue
++                entry = {
++                    'name': str(item.get('name') or ''),
++                    'vendor': str(item.get('vendor') or ''),
++                    'type': str(item['type']).strip(),
++                    'sub_type': str(item.get('sub_type') or ''),
++                    'base_type': str(item.get('base_type') or '').strip(),
++                }
++                try:
++                    for key in FILAMENT_LIBRARY_TEMP_KEYS:
++                        if item.get(key) not in (None, ''):
++                            entry[key] = int(item[key])
++                except (TypeError, ValueError):
++                    # Skip just this entry; the rest of the library still applies
++                    logging.error("[filament_parameters] ignoring library entry %r: invalid temperature", entry['name'] or entry['type'])
++                    continue
++                if item.get('is_soft') is not None:
++                    entry['is_soft'] = bool(item['is_soft'])
++                self._library.append(entry)
++            logging.info("[filament_parameters] loaded %d filament library entries", len(self._library))
++        except Exception as e:
++            logging.error("[filament_parameters] failed to load %s: %s", self._library_path, str(e))
++            self._library = []
++        return self._library
++
++    def _library_lookup(self, filament_vendor, filament_main_type, filament_sub_type):
++        norm = lambda value: str(value or '').strip().lower()
++        vendor, main_type, sub_type = norm(filament_vendor), norm(filament_main_type), norm(filament_sub_type)
++        entries = [e for e in self._library_entries() if norm(e['type']) == main_type]
++        if not entries:
++            return None
++        # Same precedence as the stock tables: exact, any subtype, generic
++        # vendor, generic vendor with any subtype. A blank vendor or subtype
++        # matches like `generic`.
++        wildcard = ('', 'generic')
++        for want_vendor, want_sub in ((vendor, sub_type), (vendor, None), (None, sub_type), (None, None)):
++            for e in entries:
++                ev, es = norm(e['vendor']), norm(e['sub_type'])
++                if (ev in wildcard if want_vendor is None else ev == want_vendor) and \
++                        (es in wildcard if want_sub is None else es == want_sub):
++                    return e
++        return None
++
+     def _search_filament_param_value(self, dict_obj, filament_vendor, filament_main_type, filament_sub_type, key_name):
++        entry = self._library_lookup(filament_vendor, filament_main_type, filament_sub_type)
++        if entry is None:
++            return self._search_stock_param_value(dict_obj, filament_vendor, filament_main_type, filament_sub_type, key_name)
++        if entry.get(key_name) is not None:
++            return entry[key_name]
++        value = self._search_stock_param_value(dict_obj, filament_vendor, filament_main_type, filament_sub_type, key_name)
++        # A type the stock tables do not know (e.g. `PLA+`) has no `vol_speed`,
++        # which would discard every parameter; borrow its base type's instead.
++        if value is None and entry['base_type']:
++            value = self._search_stock_param_value(dict_obj, filament_vendor, entry['base_type'], filament_sub_type, key_name)
++        return value
++
++    def _search_stock_param_value(self, dict_obj, filament_vendor, filament_main_type, filament_sub_type, key_name):
+         key = f'{filament_vendor}_{filament_main_type}_{filament_sub_type}_{key_name}'
+         default_fill = 'generic'
+ 
+@@ -1824,6 +1909,21 @@
+ 
+         return is_allow
+ 
++    def cmd_FILAMENT_LIBRARY_QUERY(self, gcmd):
++        vendor = gcmd.get('VENDOR', 'Generic')
++        main_type = gcmd.get('TYPE')
++        sub_type = gcmd.get('SUBTYPE', '')
++        nozzle_diameter = gcmd.get_float('NOZZLE', 0.4)
++        nozzle_volume_type = gcmd.get('VOLUME_TYPE', 'standard')
++        entry = self._library_lookup(vendor, main_type, sub_type)
++        params = self.get_filament_parameters(vendor, main_type, sub_type, nozzle_diameter, nozzle_volume_type)
++        gcmd.respond_info("[filament_parameters] %s %s %s: library entry %s\n"
++                          "load_temp=%s unload_temp=%s print_temp=%s is_soft=%s flow_k=%.4f" % (
++                          vendor, main_type, sub_type,
++                          repr(entry['name'] or entry['type']) if entry else 'none',
++                          params['load_temp'], params['unload_temp'], params['print_temp'],
++                          params['is_soft'], params['flow_k']))
++
+     def cmd_FILAMENT_PARA_GET_ALL_INFO(self, gcmd):
+         gcmd.respond_info("[filament_parameters] get all filament parameters")
+         gcmd.respond_info(str(self._config_standard_02))
