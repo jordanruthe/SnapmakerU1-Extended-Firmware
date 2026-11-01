@@ -1,0 +1,18 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# SPDX-PackageHomePage: https://github.com/paxx12-snapmaker-u1/SnapmakerU1-Extended-Firmware
+# SPDX-FileCopyrightText: Copyright (c) 2026 @paxx12
+
+# Merged into the `services` group of 21_actions_services.yaml. lmd respawns
+# the GUI a couple of seconds after it is killed.
+actions:
+  services:
+    items:
+      restart-screen:
+        label: Restart Screen
+        description: Reload the touchscreen so it picks up changes to the filament library. The screen is unavailable for up to a minute.
+        confirm: true
+        cmd:
+          - pkill
+          - -x
+          - gui
+        message: "Restarting screen..."
