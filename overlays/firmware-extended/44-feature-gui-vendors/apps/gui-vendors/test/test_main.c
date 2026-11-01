@@ -149,6 +149,24 @@ static void test_descriptor_verify(void)
     close(fd);
     tmpfile_with(dpath, VALID_DEC);
     CHECK(gv_descriptor_load(dpath, &d, err, sizeof(err)) == 0);
+    /* padded with a comment to exactly 65535 bytes: accepted; one more: rejected */
+    {
+        size_t base = strlen(VALID_DEC);
+        char *big = malloc(65537);
+        CHECK(big != NULL && base + 2 < 65535);
+        if (big) {
+            memcpy(big, VALID_DEC, base);
+            big[base] = '#';
+            memset(big + base + 1, 'x', 65535 - base - 2);
+            strcpy(big + 65535 - 1, "\n");
+            tmpfile_with(dpath, big);
+            CHECK(gv_descriptor_load(dpath, &d, err, sizeof(err)) == 0);
+            strcpy(big + 65535 - 1, "x\n");
+            tmpfile_with(dpath, big);
+            CHECK(gv_descriptor_load(dpath, &d, err, sizeof(err)) < 0);
+            free(big);
+        }
+    }
     unlink(dpath);
     CHECK(gv_descriptor_load(dpath, &d, err, sizeof(err)) < 0);    /* missing */
 }

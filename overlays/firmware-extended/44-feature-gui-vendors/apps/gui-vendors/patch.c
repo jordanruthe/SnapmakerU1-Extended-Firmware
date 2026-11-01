@@ -436,8 +436,11 @@ static int check_sites(const struct gv_descriptor *d, unsigned rows)
                          (unsigned long)s->vaddr, w, bound_value(s, d->table_rows));
                 return -1;
             }
-            if (bound_value(s, rows) > 0xfff)
+            if (bound_value(s, rows) > 0xfff) {
+                GV_ERROR("site %s %#lx: %u rows do not fit a cmp immediate", kind_name(s->kind),
+                         (unsigned long)s->vaddr, rows);
                 return -1;
+            }
         }
     }
     return 0;

@@ -375,8 +375,8 @@ int gv_descriptor_load(const char *path, struct gv_descriptor *d, char *err, siz
         set_err(err, errlen, "out of memory");
         return -1;
     }
-    n = fread(buf, 1, 65535, f);
-    if (ferror(f) || !feof(f)) {
+    n = fread(buf, 1, 65536, f);  /* one byte more than allowed: detects too large */
+    if (ferror(f) || n > 65535) {
         fclose(f);
         free(buf);
         set_err(err, errlen, "cannot read %s (or too large)", path);
