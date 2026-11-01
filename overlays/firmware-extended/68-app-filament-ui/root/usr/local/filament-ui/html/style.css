@@ -1064,3 +1064,46 @@ input[type="checkbox"] {
         max-height: calc(100vh - 24px);
     }
 }
+
+/* ── Filament library ────────────────────────────────────────────────────── */
+
+.header-btn-secondary { background: var(--item); }
+.header-btn-secondary:hover:not(:disabled) { background: var(--hover); }
+
+.library-colors {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+}
+
+.library-item-btn {
+    flex-shrink: 0;
+    min-width: 32px;
+}
+
+.form-hint {
+    margin: 0 0 12px;
+    font-size: 11px;
+    line-height: 1.5;
+    color: var(--muted);
+}
+
+.form-label .form-hint { margin: 0; }
+
+.library-warning { color: var(--warning); }
+.library-error { color: var(--error); }
+.library-note { color: var(--warning); opacity: 0.8; font-size: 0.85em; }
+.library-restart {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 8px 12px;
+    margin-top: 12px;
+    padding: 8px 12px;
+    border-radius: 6px;
+    background: rgba(255, 152, 0, 0.12);
+    font-size: 0.9em;
+}
+.library-restart span { font-size: 13px; color: var(--text); }
