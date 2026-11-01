@@ -115,7 +115,9 @@ cmd_restart_gui() {
 
 # The real Klipper cannot start in QEMU (no MCUs), which leaves the GUI on
 # "Klipper failed to start" dialogs and without any filament data. Run a fake
-# klippy socket instead, and mark the first-run wizard as done.
+# klippy socket instead, and mark the first-run wizard as done. Also turn on
+# Advanced Mode (the .fluidd flag), which makes Moonraker's config root
+# writable and starts firmware-config, as on a printer using the web UIs.
 setup_gui() {
   local before deadline=$((SECONDS + 120))
   echo ">> Setting up fake klippy and GUI config"
@@ -129,8 +131,10 @@ setup_gui() {
     su lava -s /bin/sh -c "setsid python3 /tmp/fake-klippy.py /home/lava/printer_data/comms/klippy.sock >/tmp/fake-klippy.log 2>&1 &"
     printf "%s\n" "{\"system\":{\"guide_pass\":1,\"language\":\"en\",\"offset_pass\":1,\"bedmesh_pass\":1,\"shaper_pass\":1,\"motor_denoise_pass\":1,\"full_test_pass\":1,\"top_cover_guide\":1}}" > /home/lava/printer_data/config/gui_config.json
     chown lava:lava /home/lava/printer_data/config/gui_config.json
+    touch /oem/printer_data/.fluidd
     sleep 3
-    /etc/init.d/S61moonraker restart >/dev/null 2>&1' || die "failed to set up fake klippy"
+    /etc/init.d/S61moonraker restart >/dev/null 2>&1
+    /etc/init.d/S99firmware-config restart >/dev/null 2>&1' || die "failed to set up fake klippy"
   until curl -fs --max-time 5 "http://127.0.0.1:$HTTP_PORT/server/info" 2>/dev/null | grep -q '"klippy_state": "ready"'; do
     (( SECONDS < deadline )) || die "Moonraker did not connect to the fake klippy"
     sleep 3

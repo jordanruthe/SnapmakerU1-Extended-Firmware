@@ -44,14 +44,16 @@ fi
 if [[ ! -f "$DISK_IMG" ]]; then
   echo ">> Creating $DISK_IMG..."
   rm -f "$DISK_IMG.tmp"
-  truncate -s "2G" "$DISK_IMG.tmp"
+  # Sparse. userdata must exceed the 1400 MiB Moonraker reserves there,
+  # otherwise every upload (gcode, config files) fails with 413.
+  truncate -s "4G" "$DISK_IMG.tmp"
   parted "$DISK_IMG.tmp" --script \
     mklabel gpt \
     mkpart misc 2MiB 128MiB \
     mkpart oem 128MiB 1024MiB \
-    mkpart userdata 1024MiB 2047MiB
+    mkpart userdata 1024MiB 4095MiB
   mkfs.ext4 -F -L oem -E offset=$((128 * 1024 * 1024)) "$DISK_IMG.tmp" $((896 * 1024))
-  mkfs.ext4 -F -L userdata -E offset=$((1024 * 1024 * 1024)) "$DISK_IMG.tmp" $((1023 * 1024))
+  mkfs.ext4 -F -L userdata -E offset=$((1024 * 1024 * 1024)) "$DISK_IMG.tmp" $((3071 * 1024))
   mv "$DISK_IMG.tmp" "$DISK_IMG"
 fi
 

@@ -286,6 +286,12 @@ How it works and what to know:
   `rootfs.img` as gzip (in the dev container, once per image).
 - SSH and Remote Screen are off by default; `start` enables them over the
   serial console, using the same `extended2.cfg` settings as firmware-config.
+- `start` also turns on Advanced Mode (`/oem/printer_data/.fluidd`), without
+  which Moonraker's `config` root is read-only and firmware-config does not
+  start.
+- The emulated `userdata` partition is 3 GiB: Moonraker keeps 1400 MiB free
+  there and rejects every upload (HTTP 413) otherwise. An existing
+  `disk.img` keeps its old size; delete it to recreate.
 - Klipper cannot start in QEMU (no MCUs), which leaves the GUI on a failure
   dialog. `start` instead runs `scripts/dev/fake-klippy.py`, a stand-in for
   Klipper's socket that gives Moonraker and the GUI a ready printer with four
