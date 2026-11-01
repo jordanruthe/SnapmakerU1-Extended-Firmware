@@ -9,7 +9,7 @@ if [[ $# -ne 1 ]]; then
 fi
 
 ROOT_DIR="$(realpath "$(dirname "$0")/../..")"
-TMP_DIR="$ROOT_DIR/tmp"
+TMP_DIR="${QEMU_TMP_DIR:-$ROOT_DIR/tmp}"
 
 KERNEL_TAG=20260112-d688db2
 KERNEL_FILENAME=kernel-open-6.1-$KERNEL_TAG-vmlinuz
@@ -18,7 +18,7 @@ KERNEL_SHA256=2ebcebbc4b524e76e3a3ff9fef704478853f2d90e4d273221dfc4a5e0dfe5498
 KERNEL_FILE="$TMP_DIR/$KERNEL_FILENAME"
 
 ROOTFS_IMG="$(realpath "$1")"
-DISK_IMG="$TMP_DIR/disk.img"
+DISK_IMG="${DISK_IMG:-$TMP_DIR/disk.img}"
 
 APPEND="console=ttyAMA0,115200 earlycon=pl011,mmio32,0x09000000"
 APPEND="$APPEND systemd.volatile=overlay ro rootwait rootfstype=squashfs root=/dev/vda"
@@ -59,7 +59,7 @@ echo ">> Press Ctrl+A then X to exit the emulated system..."
 sleep 1s
 
 echo ">> Starting qemu..."
-qemu-system-aarch64 \
+exec qemu-system-aarch64 \
   -machine virt \
   -cpu cortex-a57 \
   -m 1024 \
@@ -76,3 +76,4 @@ qemu-system-aarch64 \
   -device "virtio-blk-device,drive=hd1" \
   -drive "if=none,file=$ROOTFS_IMG,format=raw,id=hd0" \
   -device "virtio-blk-device,drive=hd0" \
+  $QEMU_EXTRA_ARGS

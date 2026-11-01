@@ -248,6 +248,54 @@ The `20-klipper-patches` overlay in `firmware-extended/` backports upstream Klip
 
 Edit `vars.mk` to configure base firmware and kernel.
 
+## Testing the Touchscreen GUI in QEMU
+
+`scripts/dev/qemu-gui-test.sh` boots an `extended-qemu` build in QEMU (via
+`scripts/dev/qemu.sh`), and drives the stock touchscreen GUI with
+[Remote Screen](remote_screen.md) screenshots and taps, so GUI changes can be
+checked without a printer.
+
+```bash
+./dev.sh make build PROFILE=extended-qemu
+scripts/dev/qemu-gui-test.sh start tmp/firmware/rk-unpacked/rootfs.img
+scripts/dev/qemu-gui-test.sh open-filament-edit 1
+scripts/dev/qemu-gui-test.sh snap /tmp/edit.png
+scripts/dev/qemu-gui-test.sh stop
+```
+
+Commands:
+
+- `start <rootfs.img>` - boot in the background and wait until SSH and
+  Remote Screen answer (about 5 minutes under emulation)
+- `snap <out.png>` - save a 480x320 screenshot of the touchscreen
+- `tap <x> <y>` - tap at panel coordinates and wait for the GUI to react
+- `ssh <cmd...>` - run a command as `root` on the emulated printer
+- `open-filament-edit [1-4]` - from the home screen, open the filament type
+  list (vendor buttons) of an extruder
+- `restart-gui` - kill the GUI, `lmd` respawns it after about 2 seconds
+- `stop` - kill QEMU
+
+State (disk image, serial log, `console.in`) is kept in
+`~/.cache/snapmaker-u1-gui-test`, or in `$GUI_TEST_DIR`. The forwarded ports
+are SSH `2222` and HTTP `2280`, so stop any other QEMU first.
+
+How it works and what to know:
+
+- The QEMU kernel cannot mount zstd squashfs, so `start` repacks the build's
+  `rootfs.img` as gzip (in the dev container, once per image).
+- SSH and Remote Screen are off by default; `start` enables them over the
+  serial console, using the same `extended2.cfg` settings as firmware-config.
+- Klipper cannot start in QEMU (no MCUs), which leaves the GUI on a failure
+  dialog. `start` instead runs `scripts/dev/fake-klippy.py`, a stand-in for
+  Klipper's socket that gives Moonraker and the GUI a ready printer with four
+  PLA extruders and applies `SET_PRINT_FILAMENT_CONFIG`. It does not simulate
+  anything else (temperatures, motion, printing).
+- The first-run wizard is skipped by writing `gui_config.json`.
+- The emulated GUI is slow right after boot: wait for a screenshot to settle
+  before tapping, and use `restart-gui` (not a reboot) after changing the GUI.
+- Tap positions were recorded against firmware 2.0.0; they need re-recording
+  when a layout changes.
+
 ## Extract Firmware
 
 To extract and examine the base firmware:
