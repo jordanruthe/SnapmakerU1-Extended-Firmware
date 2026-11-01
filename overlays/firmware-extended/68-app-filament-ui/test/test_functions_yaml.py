@@ -28,6 +28,6 @@ with tempfile.TemporaryDirectory() as tmp:
 
 assert {'restart-klipper', 'restart-moonraker', 'restart-screen'} <= set(items), list(items)
 action = items['restart-screen']
-assert action['confirm'] is True and action['cmd'] == ['pkill', '-x', 'gui'], action
+assert action['confirm'] is True and action['cmd'] == ['sh', '-c', 'pkill -x gui || true'], action
 assert set(action) == set(items['restart-klipper']), (set(action), set(items['restart-klipper']))
 print('OK')

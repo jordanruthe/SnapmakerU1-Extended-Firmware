@@ -3,7 +3,8 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 @paxx12
 
 # Merged into the `services` group of 21_actions_services.yaml. lmd respawns
-# the GUI a couple of seconds after it is killed.
+# the GUI a couple of seconds after it is killed; if no GUI is running (lmd
+# is respawning it, or HelixScreen is selected) there is nothing to do.
 actions:
   services:
     items:
@@ -12,7 +13,7 @@ actions:
         description: Reload the touchscreen so it picks up changes to the filament library. The screen is unavailable for up to a minute.
         confirm: true
         cmd:
-          - pkill
-          - -x
-          - gui
+          - sh
+          - -c
+          - pkill -x gui || true
         message: "Restarting screen..."
