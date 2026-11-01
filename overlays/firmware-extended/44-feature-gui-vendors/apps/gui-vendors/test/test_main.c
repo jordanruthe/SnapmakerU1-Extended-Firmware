@@ -188,6 +188,21 @@ static void test_library(void)
     CHECK(lib_parse("{\"version\":1}", &lib) == 0 && lib.n == 0);   /* no filaments key */
     gv_library_free(&lib);
 
+    /* brand_order, before or after filaments; non-strings and blanks skipped */
+    CHECK(lib_parse("{\"brand_order\":[\" Overture \",3,\"\",{\"a\":1},\"eSun\"],"
+                    "\"filaments\":[{\"vendor\":\"eSun\",\"type\":\"PLA\"}]}", &lib) == 0);
+    CHECK(lib.n == 1 && lib.n_order == 2);
+    if (lib.n_order == 2) {
+        CHECK_STR(lib.brand_order[0], "Overture");
+        CHECK_STR(lib.brand_order[1], "eSun");
+    }
+    gv_library_free(&lib);
+    CHECK(lib_parse("{\"filaments\":[],\"brand_order\":[\"A\"]}", &lib) == 0 && lib.n_order == 1);
+    gv_library_free(&lib);
+    CHECK(lib_parse("{\"brand_order\":\"A\",\"filaments\":[{\"type\":\"PLA\"}]}", &lib) == 0 &&
+          lib.n == 1 && lib.n_order == 0);                              /* not an array: ignored */
+    gv_library_free(&lib);
+
     CHECK(lib_parse("{not json", &lib) < 0 && lib.n == 0);
     CHECK(lib_parse("", &lib) < 0);
     CHECK(lib_parse("[1,2]", &lib) < 0);
@@ -402,7 +417,7 @@ static void test_rows(void)
         gv_rows_free(&out);
     }
 
-    /* new vendors in first-appearance order; later entries join the row;
+    /* new vendors sorted alphabetically (no brand_order); later entries join the row;
      * per-row max_entries; dedupe case-insensitive (also vs stock) */
     {
         const struct gv_lib_entry e[] = {
@@ -421,18 +436,51 @@ static void test_rows(void)
         mk_stock(&stock);
         CHECK(gv_build_rows(&g_desc, &lib, &stock, &out) == 0);
         CHECK(out.n == 5 && out.n_stock == 3 && out.n_new_vendors == 2);
-        CHECK_STR(out.v[3].vendor, "Overture");
-        CHECK(out.v[3].n_entries == 2);
-        CHECK_STR(out.v[3].entries[0], "PETG");
-        CHECK_STR(out.v[3].entries[1], "PLA");
-        CHECK_STR(out.v[4].vendor, "eSun");
-        CHECK(out.v[4].n_entries == 5);
-        CHECK_STR(out.v[4].entries[0], "PLA#Matte");
-        CHECK_STR(out.v[4].entries[4], "PA");
+        CHECK_STR(out.v[3].vendor, "eSun");         /* case-insensitive */
+        CHECK(out.v[3].n_entries == 5);
+        CHECK_STR(out.v[3].entries[0], "PLA#Matte");
+        CHECK_STR(out.v[3].entries[4], "PA");
+        CHECK_STR(out.v[4].vendor, "Overture");
+        CHECK(out.v[4].n_entries == 2);
+        CHECK_STR(out.v[4].entries[0], "PETG");
+        CHECK_STR(out.v[4].entries[1], "PLA");
         CHECK(out.v[2].n_entries == 3);
         CHECK_STR(out.v[2].entries[2], "PETG");
         CHECK(out.v[1].n_entries == 1);
         CHECK(out.n_added_entries == 1);
+        gv_rows_free(&out);
+    }
+
+    /* brand_order: listed vendors first in that order (case-insensitive,
+     * unknown names ignored), the rest alphabetically; stock rows stay put */
+    {
+        const struct gv_lib_entry e[] = {
+            E("Zeta", "PLA", ""), E("alpha", "PLA", ""), E("Mid", "PLA", ""),
+            E("Beta", "PLA", ""), E("Omega", "PLA", ""),
+        };
+        char order[3][GV_VENDOR_LEN] = { "omega", "Nobody", "Mid" };
+        lib = mk_lib(e, 5);
+        lib.brand_order = order;
+        lib.n_order = 3;
+        mk_desc(5, 8);
+        mk_stock(&stock);
+        CHECK(gv_build_rows(&g_desc, &lib, &stock, &out) == 0);
+        CHECK(out.n == 8);
+        CHECK_STR(out.v[0].vendor, "Snapmaker");
+        CHECK_STR(out.v[2].vendor, "Generic");
+        CHECK_STR(out.v[3].vendor, "Omega");
+        CHECK_STR(out.v[4].vendor, "Mid");
+        CHECK_STR(out.v[5].vendor, "alpha");
+        CHECK_STR(out.v[6].vendor, "Beta");
+        CHECK_STR(out.v[7].vendor, "Zeta");
+        gv_rows_free(&out);
+
+        /* the vendor cap keeps the first vendors of the sorted order */
+        mk_desc(5, 5);
+        CHECK(gv_build_rows(&g_desc, &lib, &stock, &out) == 0);
+        CHECK(out.n == 5 && out.n_new_vendors == 2);
+        CHECK_STR(out.v[3].vendor, "Omega");
+        CHECK_STR(out.v[4].vendor, "Mid");
         gv_rows_free(&out);
     }
 

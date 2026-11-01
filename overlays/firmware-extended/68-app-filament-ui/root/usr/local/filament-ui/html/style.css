@@ -1107,3 +1107,24 @@ input[type="checkbox"] {
     font-size: 0.9em;
 }
 .library-restart span { font-size: 13px; color: var(--text); }
+.library-check {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 8px 0;
+    font-size: 13px;
+    color: var(--text);
+    cursor: pointer;
+}
+.brand-order-mode { display: flex; gap: 20px; }
+.brand-order-list { list-style: none; margin: 8px 0 0; padding: 0; }
+.brand-order-list li {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 10px;
+    border-bottom: 1px solid var(--border);
+    font-size: 14px;
+}
+.brand-order-list li span { flex: 1; }
+.brand-order-list li.fixed { opacity: 0.55; }

@@ -20,6 +20,9 @@ the stock Snapmaker touchscreen GUI (`/usr/bin/gui`) from
   case-insensitively) get entries appended into free slots only, any other
   vendor becomes a new row after the stock rows, deduplicated, capped by the
   descriptor's `max_entries` and `max_vendors`. Overflow is logged and dropped.
+- New rows are ordered by the library's optional `"brand_order": [...]`
+  (case-insensitive), then alphabetically; the stock rows keep their place
+  because other GUI tables are indexed in their order.
 - Entries the GUI cannot pass to Klipper are skipped and logged. The GUI sends
   `SET_PRINT_FILAMENT_CONFIG ... VENDOR=%s FILAMENT_TYPE=%s FILAMENT_SUBTYPE='%s'`,
   so vendor and type must not contain whitespace or `#*;'"`, sub_type must not

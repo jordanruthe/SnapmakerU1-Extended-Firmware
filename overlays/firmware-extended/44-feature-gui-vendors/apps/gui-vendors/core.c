@@ -584,11 +584,10 @@ int gv_library_parse(const char *json, size_t len, struct gv_library *lib,
 {
     jsmn_parser p;
     jsmntok_t *t = NULL;
-    int ntok, root = 0, arr = -1, rc = -1;
+    int ntok, root = 0, arr = -1, order = -1, rc = -1;
     size_t cap = 0;
 
-    lib->entries = NULL;
-    lib->n = 0;
+    memset(lib, 0, sizeof(*lib));
 
     if (!json_depth_ok(json, len)) {
         set_err(err, errlen, "JSON nested deeper than %d levels", GV_JSON_MAX_DEPTH);
@@ -620,11 +619,30 @@ int gv_library_parse(const char *json, size_t len, struct gv_library *lib,
     }
     for (int i = root + 1, k = 0; k < t[root].size; k++) {
         int v = i + 1;
-        if (key_eq(json, &t[i], "filaments")) {
+        if (key_eq(json, &t[i], "filaments"))
             arr = v;
-            break;
-        }
+        else if (key_eq(json, &t[i], "brand_order"))
+            order = v;
         i = v + tok_span(t, v);
+    }
+    if (order >= 0 && t[order].type == JSMN_ARRAY && t[order].size > 0) {
+        lib->brand_order = calloc(GV_MAX_ROWS_CAP, sizeof(*lib->brand_order));
+        if (!lib->brand_order) {
+            set_err(err, errlen, "out of memory");
+            goto out;
+        }
+        for (int i = order + 1, k = 0; k < t[order].size; k++) {
+            char *b = lib->brand_order[lib->n_order];
+            int el = i;
+            i += tok_span(t, el);
+            if (lib->n_order >= GV_MAX_ROWS_CAP || tok_string(json, &t[el], b, GV_VENDOR_LEN) < 0)
+                continue;
+            trim(b);
+            if (b[0])
+                lib->n_order++;
+        }
+    } else if (order >= 0 && t[order].type != JSMN_ARRAY) {
+        GV_INFO("ignoring \"brand_order\": not an array");
     }
     if (arr < 0) {
         rc = 0; /* no filaments key: empty library */
@@ -665,7 +683,6 @@ int gv_library_parse(const char *json, size_t len, struct gv_library *lib,
             struct gv_lib_entry *ne = realloc(lib->entries, ncap * sizeof(*ne));
             if (!ne) {
                 set_err(err, errlen, "out of memory");
-                gv_library_free(lib);
                 goto out;
             }
             lib->entries = ne;
@@ -676,6 +693,8 @@ int gv_library_parse(const char *json, size_t len, struct gv_library *lib,
     rc = 0;
 out:
     free(t);
+    if (rc < 0)
+        gv_library_free(lib);
     return rc;
 }
 
@@ -686,8 +705,7 @@ int gv_library_load(const char *path, struct gv_library *lib, char *err, size_t 
     size_t n;
     int rc;
 
-    lib->entries = NULL;
-    lib->n = 0;
+    memset(lib, 0, sizeof(*lib));
     if (!f) {
         GV_DEBUG("no library at %s", path);
         return 0;
@@ -725,8 +743,8 @@ int gv_library_load(const char *path, struct gv_library *lib, char *err, size_t 
 void gv_library_free(struct gv_library *lib)
 {
     free(lib->entries);
-    lib->entries = NULL;
-    lib->n = 0;
+    free(lib->brand_order);
+    memset(lib, 0, sizeof(*lib));
 }
 
 /* ---- rows ------------------------------------------------------------ */
@@ -776,6 +794,35 @@ static int row_has(const struct gv_row *row, const char *entry)
     return 0;
 }
 
+static size_t brand_rank(const struct gv_library *lib, const char *vendor)
+{
+    for (size_t i = 0; i < lib->n_order; i++)
+        if (!strcasecmp(lib->brand_order[i], vendor))
+            return i;
+    return lib->n_order;
+}
+
+/* Added rows (after the stock ones, which keep their place): brand_order
+ * first, then alphabetically. Stable insertion sort, at most 64 rows. */
+static void sort_new_rows(const struct gv_library *lib, struct gv_rows *r)
+{
+    for (unsigned i = r->n_stock + 1; i < r->n; i++) {
+        struct gv_row cur = r->v[i];
+        size_t rank = brand_rank(lib, cur.vendor);
+        unsigned j = i;
+        while (j > r->n_stock) {
+            const struct gv_row *prev = &r->v[j - 1];
+            size_t prank = brand_rank(lib, prev->vendor);
+            if (prank < rank || (prank == rank && (rank < lib->n_order ||
+                                                   strcasecmp(prev->vendor, cur.vendor) <= 0)))
+                break;
+            r->v[j] = *prev;
+            j--;
+        }
+        r->v[j] = cur;
+    }
+}
+
 int gv_build_rows(const struct gv_descriptor *d, const struct gv_library *lib,
                   const struct gv_rows *stock, struct gv_rows *out)
 {
@@ -814,8 +861,8 @@ int gv_build_rows(const struct gv_descriptor *d, const struct gv_library *lib,
             continue;
         }
         if (!row) {
-            if (out->n >= d->max_vendors) {
-                GV_INFO("vendor cap %u reached, dropping %s/%s", d->max_vendors, e->vendor, entry);
+            if (out->n >= GV_MAX_ROWS_CAP) {
+                GV_INFO("more than %d vendors, dropping %s/%s", GV_MAX_ROWS_CAP, e->vendor, entry);
                 free(entry);
                 continue;
             }
@@ -844,6 +891,13 @@ int gv_build_rows(const struct gv_descriptor *d, const struct gv_library *lib,
         row->entries[row->n_entries++] = oe;
         if ((unsigned)(row - out->v) < out->n_stock)
             out->n_added_entries++;
+    }
+    sort_new_rows(lib, out);
+    while (out->n > d->max_vendors) {
+        out->n--;
+        out->n_new_vendors--;
+        GV_INFO("vendor cap %u reached, dropping vendor %s (%u entries)", d->max_vendors,
+                out->v[out->n].vendor, out->v[out->n].n_entries);
     }
     return 0;
 

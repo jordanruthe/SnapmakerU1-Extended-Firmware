@@ -8,7 +8,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Filament Manager</title>
-<link rel="stylesheet" href="style.css?v=8">
+<link rel="stylesheet" href="style.css?v=9">
 </head>
 <body>
 <nav id="back-links" class="back-links" hidden>
@@ -207,7 +207,15 @@
         <div class="tag-edit-body spoolman-body">
             <p class="dialog-intro" id="library-intro"></p>
             <input type="text" id="library-search" class="spoolman-search" autocomplete="off">
+            <label id="library-spools-only-row" class="library-check" style="display:none">
+                <input type="checkbox" id="library-spools-only" checked>
+                Only filaments with a spool in Spoolman
+            </label>
             <div id="library-list" class="spoolman-list"></div>
+            <div id="library-stale" class="library-restart" style="display:none">
+                <span id="library-stale-text"></span>
+                <button type="button" id="library-stale-btn" class="channel-action-btn">Remove</button>
+            </div>
             <div id="library-restart" class="library-restart" style="display:none">
                 <span>Restart the screen to show changes on the touchscreen</span>
                 <button type="button" id="library-restart-btn" class="channel-action-btn">Restart screen</button>
@@ -215,9 +223,34 @@
         </div>
         <div class="tag-edit-footer">
             <div class="modal-actions">
+                <button type="button" id="library-order" class="modal-btn-cancel">Brand order</button>
                 <button type="button" id="library-import" class="modal-btn-cancel">Import from Spoolman</button>
                 <button type="button" id="library-import-all" class="modal-btn-submit" style="display:none">Import all shown</button>
                 <button type="button" id="library-add" class="modal-btn-submit">Add filament</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Touchscreen Brand Order Modal -->
+<div id="brand-order-modal" class="tag-edit-overlay" style="display:none">
+    <div class="tag-edit-dialog" role="dialog" aria-modal="true">
+        <div class="tag-edit-header">
+            <h2 class="tag-edit-title">Touchscreen Brand Order</h2>
+            <button class="tag-edit-close brand-order-close" type="button" aria-label="Close">&times;</button>
+        </div>
+        <div class="tag-edit-body">
+            <p class="dialog-intro">Order of the brand buttons in the touchscreen's filament editor. Snapmaker, Polymaker and Generic always come first.</p>
+            <div class="brand-order-mode">
+                <label class="library-check"><input type="radio" name="brand-order-mode" value="alpha"> Alphabetical</label>
+                <label class="library-check"><input type="radio" name="brand-order-mode" value="custom"> Custom</label>
+            </div>
+            <ol id="brand-order-list" class="brand-order-list"></ol>
+        </div>
+        <div class="tag-edit-footer">
+            <div class="modal-actions">
+                <button type="button" class="modal-btn-cancel brand-order-close">Cancel</button>
+                <button type="button" id="brand-order-save" class="modal-btn-submit">Save</button>
             </div>
         </div>
     </div>
@@ -326,6 +359,6 @@
 if (window.top === window) document.getElementById('back-links').hidden = false;
 </script>
 <script src="script.js?v=3"></script>
-<script src="library.js?v=5"></script>
+<script src="library.js?v=6"></script>
 </body>
 </html>

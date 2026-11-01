@@ -95,6 +95,10 @@ struct gv_lib_entry {
 struct gv_library {
     struct gv_lib_entry *entries;
     size_t n;
+    /* "brand_order": added vendors listed here come first, in this order;
+     * the rest follow alphabetically */
+    char (*brand_order)[GV_VENDOR_LEN];
+    size_t n_order;
 };
 
 /* Parse filament_library.json text. An empty vendor means "Generic".
@@ -130,7 +134,8 @@ struct gv_rows {
 };
 
 /* Build the final table from stock rows + library (see plan "Row building
- * rules"). `stock` strings are borrowed and must outlive *out. */
+ * rules"); added vendors are sorted by the library's brand_order, then
+ * alphabetically. `stock` strings are borrowed and must outlive *out. */
 int gv_build_rows(const struct gv_descriptor *d, const struct gv_library *lib,
                   const struct gv_rows *stock, struct gv_rows *out);
 void gv_rows_free(struct gv_rows *r);

@@ -1482,6 +1482,10 @@ function initializeModals() {
                 closeModal('library-edit-modal');
                 return;
             }
+            if (document.getElementById('brand-order-modal').style.display !== 'none') {
+                closeModal('brand-order-modal');
+                return;
+            }
             closeModal('overwrite-modal'); closeModal('spoolman-modal');
             closeModal('mismatch-modal'); closeModal('library-modal');
         }

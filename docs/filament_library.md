@@ -54,6 +54,13 @@ extruder's brand, material, subtype and colours, replacing whatever was there
 With [Spoolman](spoolman.md) enabled, click **Import from Spoolman** in the
 library dialog and import single filaments or **Import all shown**.
 
+By default the list only shows filaments you have a spool of (not archived
+and not empty; a spool without a weight counts). Untick **Only filaments with
+a spool in Spoolman** to see all of them. To keep the library in step with
+your spools, click **Import all shown** now and then: new filaments are
+added and existing ones updated. When filaments imported earlier have no
+spool left, the dialog offers to **Remove** them from the library.
+
 | Spoolman | Library |
 |---|---|
 | Vendor | Brand (`Generic` if none) |
@@ -62,9 +69,13 @@ library dialog and import single filaments or **Import all shown**.
 | Colour / multi-colour | Colours |
 | Extruder temperature | Print temperature |
 
-Spoolman has no load/unload temperatures, so those are left blank. Importing
-the same Spoolman filament again updates the existing entry and keeps the
-load/unload temperatures you set by hand.
+Spoolman has no load/unload temperatures, so those are left blank and the
+printer uses its built-in values for the material (e.g. 250 °C for PLA,
+270 °C for PETG). Those are deliberately hotter than printing: loading
+flushes the previous filament quickly and unloading melts the tip so it pulls
+out cleanly. Set them by hand only for unusual materials. Importing the same
+Spoolman filament again updates the existing entry and keeps the load/unload
+temperatures you set by hand.
 
 ## Touchscreen
 
@@ -77,8 +88,11 @@ action is under **Restart Screen** in [firmware-config](firmware_config.md)
 In the filament editor on the printer:
 
 - Brands that are not Snapmaker, Polymaker or Generic appear as extra brand
-  buttons **below** those three. Brands beyond the fourth are reached by
-  scrolling the brand column (swipe up).
+  buttons **below** those three, alphabetically. Brands beyond the fourth are
+  reached by scrolling the brand column (swipe up; there is no scroll bar).
+- **Brand order** in the library dialog sets your own order instead (e.g.
+  your most used brands first); brands added later go after them,
+  alphabetically. Snapmaker, Polymaker and Generic always stay on top.
 - Materials for Snapmaker and Polymaker are added to their lists where the
   stock list has free slots.
 - Subtypes appear as `MATERIAL#Subtype`.

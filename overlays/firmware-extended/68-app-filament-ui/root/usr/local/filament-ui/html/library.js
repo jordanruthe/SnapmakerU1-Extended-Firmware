@@ -17,6 +17,8 @@ const LIBRARY_FILE = 'filament_library.json';
 const LIBRARY_VERSION = 1;
 // Entries per vendor the touchscreen can list.
 const LIBRARY_VENDOR_LIMIT = 23;
+// The touchscreen's own brands; they always come first, in this order.
+const STOCK_BRANDS = ['Snapmaker', 'Polymaker', 'Generic'];
 
 // Types the stock filament tables have parameters for, offered as the base
 // type a custom type borrows flow and speed values from.
@@ -29,7 +31,14 @@ let libraryLoaded = false;
 let libraryChannel = null;
 let libraryView = 'library';
 let librarySpoolmanFilaments = [];
+// Spoolman filament ids that have a spool (not archived, not empty); null
+// when the spools could not be read.
+let librarySpooledIds = null;
 let libraryEditColors = [];
+// Touchscreen order of the added brands; empty means alphabetical. Brands not
+// listed follow the listed ones alphabetically, as in libgui-vendors.
+let libraryBrandOrder = [];
+let brandOrderDraft = [];
 
 function moonrakerHeaders() {
     const jwt = getJWT();
@@ -41,17 +50,22 @@ async function loadLibrary() {
                             { headers: moonrakerHeaders(), cache: 'no-store' });
     if (res.status === 404) {
         libraryFilaments = [];
+        libraryBrandOrder = [];
     } else if (!res.ok) {
         throw new Error(`Failed to read ${LIBRARY_FILE} (HTTP ${res.status})`);
     } else {
         const data = await res.json();
         libraryFilaments = Array.isArray(data?.filaments) ? data.filaments.filter(f => f && f.type) : [];
+        libraryBrandOrder = Array.isArray(data?.brand_order)
+            ? data.brand_order.filter(b => typeof b === 'string').map(cleanText).filter(Boolean) : [];
     }
     libraryLoaded = true;
 }
 
 async function saveLibrary() {
-    const body = JSON.stringify({ version: LIBRARY_VERSION, filaments: libraryFilaments }, null, 2) + '\n';
+    const data = { version: LIBRARY_VERSION, filaments: libraryFilaments };
+    if (libraryBrandOrder.length) data.brand_order = libraryBrandOrder;
+    const body = JSON.stringify(data, null, 2) + '\n';
     const form = new FormData();
     form.append('root', 'config');
     form.append('path', LIBRARY_DIR);
@@ -133,7 +147,10 @@ function showLibraryView(view) {
     const importing = view === 'spoolman';
     document.getElementById('library-import').textContent = importing ? '← Library' : 'Import from Spoolman';
     document.getElementById('library-add').style.display = importing ? 'none' : '';
+    document.getElementById('library-order').style.display = importing ? 'none' : '';
     document.getElementById('library-import-all').style.display = importing ? '' : 'none';
+    document.getElementById('library-spools-only-row').style.display = importing ? '' : 'none';
+    if (!importing) document.getElementById('library-stale').style.display = 'none';
     document.getElementById('library-search').placeholder = importing
         ? 'Filter Spoolman filaments…' : 'Filter by name, brand, or material…';
 }
@@ -303,7 +320,14 @@ async function showSpoolmanImport() {
     const list = document.getElementById('library-list');
     list.innerHTML = '<div class="spoolman-empty"><span class="spinner"></span> Loading Spoolman filaments…</div>';
     try {
-        librarySpoolmanFilaments = await fetchSpoolmanList('/v1/filament');
+        const [filaments, spools] = await Promise.all([
+            fetchSpoolmanList('/v1/filament'),
+            fetchSpoolmanList('/v1/spool').catch(() => null),
+        ]);
+        librarySpoolmanFilaments = filaments;
+        librarySpooledIds = spools && new Set(spools
+            .filter(sp => !sp.archived && (finiteNumber(sp.remaining_weight) ?? 1) > 0)
+            .map(sp => Number(sp.filament?.id)).filter(Number.isFinite));
     } catch (err) {
         list.innerHTML = `<div class="spoolman-empty">${escHtml(`Failed to load Spoolman: ${err.message}`)}</div>`;
         return;
@@ -311,14 +335,65 @@ async function showSpoolmanImport() {
     renderSpoolmanImportList();
 }
 
-function renderSpoolmanImportList() {
+function spoolsOnly() {
+    return librarySpooledIds != null && document.getElementById('library-spools-only').checked;
+}
+
+// Spoolman filaments the import list shows: filtered by the search text and,
+// unless unticked, to those with a spool.
+function shownSpoolmanFilaments() {
     const filter = document.getElementById('library-search').value;
+    return librarySpoolmanFilaments.filter(f =>
+        (!spoolsOnly() || librarySpooledIds.has(Number(f.id))) &&
+        matchesFilter([f.name, f.vendor?.name, f.material], filter));
+}
+
+// Library entries imported from a Spoolman filament that no longer has a spool.
+function staleSpoolmanEntries() {
+    if (librarySpooledIds == null) return [];
+    const known = new Set(librarySpoolmanFilaments.map(f => Number(f.id)));
+    return libraryFilaments.filter(e => e.spoolman_filament_id &&
+        (!known.has(e.spoolman_filament_id) || !librarySpooledIds.has(e.spoolman_filament_id)));
+}
+
+function renderStaleNotice() {
+    const stale = spoolsOnly() ? staleSpoolmanEntries() : [];
+    document.getElementById('library-stale').style.display = stale.length ? '' : 'none';
+    document.getElementById('library-stale-text').textContent =
+        `${stale.length} library filament${stale.length === 1 ? ' was' : 's were'} imported from ` +
+        `Spoolman and ${stale.length === 1 ? 'has' : 'have'} no spool left.`;
+}
+
+async function removeStaleSpoolmanEntries() {
+    const stale = staleSpoolmanEntries();
+    if (!stale.length) return;
+    const accepted = await requestConfirmation('Remove from library?', [
+        { label: 'Filaments', value: stale.map(libraryDisplayName).join(', ') },
+        { label: 'Reason', value: 'Imported from Spoolman, no spool left (archived or empty)' },
+    ]);
+    if (!accepted) return;
+    const previous = libraryFilaments;
+    libraryFilaments = libraryFilaments.filter(e => !stale.includes(e));
+    try {
+        await saveLibrary();
+        showRestartNotice();
+        showStatus(`Removed ${stale.length} filament${stale.length === 1 ? '' : 's'}`, 'success');
+    } catch (err) {
+        libraryFilaments = previous;
+        showStatus(err.message, 'error');
+    }
+    renderSpoolmanImportList();
+}
+
+function renderSpoolmanImportList() {
     const list = document.getElementById('library-list');
     list.innerHTML = '';
-    const filaments = librarySpoolmanFilaments.filter(f =>
-        matchesFilter([f.name, f.vendor?.name, f.material], filter));
+    renderStaleNotice();
+    document.getElementById('library-spools-only').disabled = librarySpooledIds == null;
+    const filaments = shownSpoolmanFilaments();
     if (!filaments.length) {
-        list.innerHTML = '<div class="spoolman-empty">No Spoolman filaments found</div>';
+        list.innerHTML = `<div class="spoolman-empty">${spoolsOnly()
+            ? 'No Spoolman filaments with a spool found' : 'No Spoolman filaments found'}</div>`;
         return;
     }
     const importedIds = new Set(libraryFilaments.map(e => e.spoolman_filament_id).filter(Boolean));
@@ -354,6 +429,91 @@ async function importSpoolmanFilaments(filaments) {
         showStatus(err.message, 'error');
     }
     renderSpoolmanImportList();
+}
+
+// ── Touchscreen brand order ───────────────────────────────────────────────
+
+// Brands the library adds to the touchscreen (one spelling per brand,
+// case-insensitive), in the order it shows them for `order`: listed brands
+// first, the rest alphabetically. Same rules as libgui-vendors.
+function addedBrands(order) {
+    const stock = new Set(STOCK_BRANDS.map(normalizeText));
+    const brands = new Map();
+    for (const e of libraryFilaments) {
+        const vendor = cleanText(e.vendor) || 'Generic';
+        const key = normalizeText(vendor);
+        if (stock.has(key) || brands.has(key) || hiddenOnTouchscreen(vendor, e.type, e.sub_type)) continue;
+        brands.set(key, vendor);
+    }
+    const rank = brand => {
+        const i = order.findIndex(b => normalizeText(b) === normalizeText(brand));
+        return i < 0 ? order.length : i;
+    };
+    return [...brands.values()].sort((a, b) => rank(a) - rank(b) ||
+        a.localeCompare(b, undefined, { sensitivity: 'base' }));
+}
+
+function openBrandOrder() {
+    brandOrderDraft = libraryBrandOrder.length ? addedBrands(libraryBrandOrder) : [];
+    document.querySelector(`input[name=brand-order-mode][value=${brandOrderDraft.length ? 'custom' : 'alpha'}]`)
+        .checked = true;
+    renderBrandOrder();
+    openModal('brand-order-modal');
+}
+
+function renderBrandOrder() {
+    const custom = document.querySelector('input[name=brand-order-mode][value=custom]').checked;
+    const brands = custom ? brandOrderDraft : addedBrands([]);
+    const list = document.getElementById('brand-order-list');
+    list.innerHTML = '';
+    for (const brand of STOCK_BRANDS) {
+        const li = document.createElement('li');
+        li.className = 'fixed';
+        li.innerHTML = `<span>${escHtml(brand)}</span>`;
+        list.appendChild(li);
+    }
+    if (!brands.length) {
+        const li = document.createElement('li');
+        li.className = 'fixed';
+        li.innerHTML = '<span>No added brands yet</span>';
+        list.appendChild(li);
+    }
+    brands.forEach((brand, i) => {
+        const li = document.createElement('li');
+        li.innerHTML = `<span>${escHtml(brand)}</span>`;
+        if (custom) {
+            for (const [label, title, to] of [['↑', 'Move up', i - 1], ['↓', 'Move down', i + 1]]) {
+                const btn = document.createElement('button');
+                btn.type = 'button';
+                btn.className = 'channel-action-btn';
+                btn.textContent = label;
+                btn.title = title;
+                btn.setAttribute('aria-label', `${title}: ${brand}`);
+                btn.disabled = to < 0 || to >= brands.length;
+                btn.addEventListener('click', () => {
+                    [brandOrderDraft[i], brandOrderDraft[to]] = [brandOrderDraft[to], brandOrderDraft[i]];
+                    renderBrandOrder();
+                });
+                li.appendChild(btn);
+            }
+        }
+        list.appendChild(li);
+    });
+}
+
+async function saveBrandOrder() {
+    const custom = document.querySelector('input[name=brand-order-mode][value=custom]').checked;
+    const previous = libraryBrandOrder;
+    libraryBrandOrder = custom ? [...brandOrderDraft] : [];
+    try {
+        await saveLibrary();
+        showRestartNotice();
+        closeModal('brand-order-modal');
+        showStatus(custom ? 'Saved brand order' : 'Brands sorted alphabetically', 'success');
+    } catch (err) {
+        libraryBrandOrder = previous;
+        showStatus(err.message, 'error');
+    }
 }
 
 // ── Edit dialog ───────────────────────────────────────────────────────────
@@ -539,11 +699,23 @@ function initializeLibrary() {
             showSpoolmanImport();
         }
     });
-    document.getElementById('library-import-all').addEventListener('click', () => {
-        const filter = document.getElementById('library-search').value;
-        importSpoolmanFilaments(librarySpoolmanFilaments.filter(f =>
-            matchesFilter([f.name, f.vendor?.name, f.material], filter)));
+    document.getElementById('library-import-all').addEventListener('click', () =>
+        importSpoolmanFilaments(shownSpoolmanFilaments()));
+    document.getElementById('library-spools-only').addEventListener('change', renderSpoolmanImportList);
+    document.getElementById('library-stale-btn').addEventListener('click', removeStaleSpoolmanEntries);
+
+    document.getElementById('library-order').addEventListener('click', openBrandOrder);
+    document.querySelectorAll('.brand-order-close').forEach(btn =>
+        btn.addEventListener('click', () => closeModal('brand-order-modal')));
+    document.getElementById('brand-order-modal').addEventListener('click', e => {
+        if (e.target.id === 'brand-order-modal') closeModal('brand-order-modal');
     });
+    document.querySelectorAll('input[name=brand-order-mode]').forEach(radio =>
+        radio.addEventListener('change', () => {
+            brandOrderDraft = radio.value === 'custom' ? addedBrands([]) : [];
+            renderBrandOrder();
+        }));
+    document.getElementById('brand-order-save').addEventListener('click', saveBrandOrder);
 
     document.querySelectorAll('.library-edit-close').forEach(btn =>
         btn.addEventListener('click', () => closeModal('library-edit-modal')));

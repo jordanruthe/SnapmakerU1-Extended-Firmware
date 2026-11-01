@@ -36,6 +36,12 @@ sm_filaments = [
     {'id': 9, 'name': 'Silk Dual', 'material': 'PLA', 'multi_color_hexes': 'FFD700,C0C0C0', 'vendor': {'name': 'Sunlu'}, 'extra': {'variant': '"Silk"'}},
     {'id': 11, 'name': 'Bambu PLA', 'material': 'PLA', 'color_hex': 'FF8800', 'vendor': {'name': 'Bambu Lab'}, 'extra': {}},
 ]
+# #7 and #9 have spools (#9 with unknown weight); #11's only spool is empty.
+sm_spools = [
+    {'id': 1, 'filament': {'id': 7}, 'remaining_weight': 500, 'archived': False},
+    {'id': 2, 'filament': {'id': 9}, 'remaining_weight': None, 'archived': False},
+    {'id': 3, 'filament': {'id': 11}, 'remaining_weight': 0, 'archived': False},
+]
 
 def ws_handler(ws):
     def on_msg(msg):
@@ -48,7 +54,7 @@ def ws_handler(ws):
         elif method == 'server.config':
             res = {'config': {'spoolman': {'server': 'http://sm.test'}}}
         elif method == 'server.spoolman.proxy':
-            res = sm_filaments if p['path'] == '/v1/filament' else []
+            res = {'/v1/filament': sm_filaments, '/v1/spool': sm_spools}.get(p['path'], [])
         elif method == 'printer.gcode.script':
             state['gcode'].append(p['script']); res = 'ok'
         ws.send(json.dumps({'jsonrpc': '2.0', 'id': m['id'], 'result': res}))
@@ -129,6 +135,12 @@ with sync_playwright() as pw:
     page.click('#library-import')
     page.wait_for_selector('#library-list .spoolman-name:has-text("Silk Dual")')
     page.screenshot(path=f'{OUT}/2-spoolman.png')
+    # only filaments with a spool by default; #11's spool is empty
+    assert page.is_checked('#library-spools-only')
+    assert page.locator('#library-list .spoolman-item:has-text("Bambu PLA")').count() == 0
+    assert page.locator('#library-list .spoolman-item:has-text("PLA+ Black")').count() == 1
+    page.uncheck('#library-spools-only')
+    page.wait_for_selector('#library-list .spoolman-name:has-text("Bambu PLA")')
     assert page.locator('#library-list .spoolman-item:has-text("Bambu PLA") .library-note').count() == 1
     assert page.locator('#library-list .spoolman-item:has-text("Silk Dual") .library-note').count() == 0
     page.click('#library-import-all')
@@ -176,6 +188,18 @@ with sync_playwright() as pw:
     assert [f['name'] for f in json.loads(state['library'])['filaments']] == ['PLA+ Black', 'Silk Dual', 'Bambu PLA']
     print('after delete:', [f['name'] for f in json.loads(state['library'])['filaments']], 'uploads:', state['uploads'])
 
+    # 5b. Entries whose Spoolman filament has no spool left can be removed
+    page.click('#library-import')
+    page.wait_for_selector('#library-list .spoolman-item')
+    assert not page.is_visible('#library-stale')     # filter off: no notice
+    page.check('#library-spools-only')
+    page.wait_for_selector('#library-stale:has-text("1 library filament was imported")')
+    page.screenshot(path=f'{OUT}/9-stale.png')
+    page.click('#library-stale-btn'); page.click('#confirm-accept')
+    page.wait_for_selector('#library-stale', state='hidden')
+    assert [f['name'] for f in json.loads(state['library'])['filaments']] == ['PLA+ Black', 'Silk Dual']
+    page.click('#library-import')  # back to library
+
     # 6. Narrow viewport
     page.set_viewport_size({'width': 390, 'height': 844})
     page.click('#library-add'); page.screenshot(path=f'{OUT}/5-mobile-edit.png')
@@ -214,6 +238,45 @@ with sync_playwright() as pw:
     page.fill(form + '[name=vendor]', 'acme')
     assert page.is_visible('#le-warning') and 'first 23' in page.inner_text('#le-warning')
     page.screenshot(path=f'{OUT}/7-vendor-limit.png')
+
+    page.click('#library-edit-form .library-edit-close')
+
+    # 9. Touchscreen brand order: alphabetical by default, custom moves
+    state['library'] = json.dumps({'version': 1, 'filaments': [
+        {'id': 'z', 'vendor': 'Zeta', 'type': 'PLA'}, {'id': 'a', 'vendor': 'alpha', 'type': 'PLA'},
+        {'id': 'p', 'vendor': 'polymaker', 'type': 'TPU'}, {'id': 'o', 'vendor': 'Overture', 'type': 'PLA'},
+        {'id': 'h', 'vendor': 'Bambu Lab', 'type': 'PLA'}]})
+    page.reload()
+    page.wait_for_selector('text=Connected')
+    page.click('#open-library')
+    page.wait_for_selector('#library-list .spoolman-item')
+    page.click('#library-order')
+    items = lambda: page.locator('#brand-order-list li span').all_inner_texts()
+    assert page.is_checked('input[name=brand-order-mode][value=alpha]')
+    assert items() == ['Snapmaker', 'Polymaker', 'Generic', 'alpha', 'Overture', 'Zeta'], items()
+    assert page.locator('#brand-order-list button').count() == 0
+    page.check('input[name=brand-order-mode][value=custom]')
+    page.click('#brand-order-list button[aria-label="Move up: Zeta"]')
+    page.click('#brand-order-list button[aria-label="Move up: Zeta"]')
+    assert items()[3:] == ['Zeta', 'alpha', 'Overture'], items()
+    page.screenshot(path=f'{OUT}/10-brand-order.png')
+    page.click('#brand-order-save')
+    page.wait_for_selector('#brand-order-modal[style*="none"]', state='attached')
+    saved = json.loads(state['library'])
+    assert saved['brand_order'] == ['Zeta', 'alpha', 'Overture'], saved
+    assert page.is_visible('#library-restart')
+    # kept by other saves, and reopened as custom
+    page.click('#library-list .spoolman-item:has-text("Overture")')
+    page.click('#library-edit-form button[type=submit]')
+    page.wait_for_selector('#library-edit-modal[style*="none"]', state='attached')
+    assert json.loads(state['library'])['brand_order'] == ['Zeta', 'alpha', 'Overture']
+    page.click('#library-order')
+    assert page.is_checked('input[name=brand-order-mode][value=custom]')
+    assert items()[3:] == ['Zeta', 'alpha', 'Overture'], items()
+    page.check('input[name=brand-order-mode][value=alpha]')
+    page.click('#brand-order-save')
+    page.wait_for_selector('#brand-order-modal[style*="none"]', state='attached')
+    assert 'brand_order' not in json.loads(state['library'])
 
     assert page.evaluate('document.documentElement.scrollWidth <= window.innerWidth')
     # The library 404 on first load is expected.
