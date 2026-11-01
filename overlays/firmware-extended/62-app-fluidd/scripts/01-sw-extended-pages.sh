@@ -12,3 +12,6 @@ set -eo pipefail
 
 # Keep Fluidd's service worker away from /firmware-config/ and friends (HTTPS)
 patch_sw_denylist.sh "$ROOTFS_DIR/home/lava/fluidd/sw.js" 'denylist:[/\/websocket/'
+
+# Link the extended pages from Fluidd's three-dots menu
+inject_extended_nav.sh "$ROOTFS_DIR/home/lava/fluidd/index.html"
