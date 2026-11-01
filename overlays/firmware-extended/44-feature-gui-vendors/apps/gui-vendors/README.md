@@ -2,7 +2,9 @@
 
 An `LD_PRELOAD` library that adds user-defined filament vendors and types to
 the stock Snapmaker touchscreen GUI (`/usr/bin/gui`) from
-`extended/filament_library.json`. Nothing stock is removed.
+`extended/filament_library.json`. Nothing stock is removed. See the overlay
+[README](../../README.md) for the overall picture and
+`docs/filament_library.md` for the user documentation.
 
 ## How it works
 
