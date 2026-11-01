@@ -200,6 +200,9 @@ class LibraryTests(Base):
         # values the brand has no own stock key for still come from the entry
         self.assertEqual(self.get('Polymaker', 'PLA', 'PolyTerra')['load_temp'], 201)
         self.assertEqual(self.get('Acme', 'PLA')['print_temp'], 199)
+        # for the generic vendor itself (which has stock keys) the entry is exact
+        for vendor in ('generic', 'Generic', ''):
+            self.assertEqual(self.get(vendor, 'PLA')['print_temp'], 199, vendor)
         # an entry for the brand itself still overrides its stock value
         self.write({'filaments': [{'vendor': 'Polymaker', 'type': 'PLA', 'sub_type': 'PolyTerra', 'print_temp': 198}]}, mtime=2000000)
         self.assertEqual(self.get('Polymaker', 'PLA', 'PolyTerra')['print_temp'], 198)

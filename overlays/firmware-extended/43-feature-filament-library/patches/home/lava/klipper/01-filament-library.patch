@@ -41,7 +41,7 @@ resolves to.
          self.printer.register_event_handler("klippy:ready", self._ready)
  
      def _ready(self):
-@@ -1612,7 +1623,88 @@
+@@ -1612,7 +1623,89 @@
      def get_status(self, eventtime=None):
          return {}
  
@@ -96,14 +96,15 @@ resolves to.
 +            return None, False
 +        # Same precedence as the stock tables: exact, any subtype, generic
 +        # vendor, generic vendor with any subtype. A blank vendor or subtype
-+        # matches like `generic`.
++        # matches like `generic`. The flag tells whether a generic entry
++        # stands in for another vendor.
 +        wildcard = ('', 'generic')
 +        for want_vendor, want_sub in ((vendor, sub_type), (vendor, None), (None, sub_type), (None, None)):
 +            for e in entries:
 +                ev, es = norm(e['vendor']), norm(e['sub_type'])
 +                if (ev in wildcard if want_vendor is None else ev == want_vendor) and \
 +                        (es in wildcard if want_sub is None else es == want_sub):
-+                    return e, want_vendor is None
++                    return e, want_vendor is None and vendor not in wildcard
 +        return None, False
 +
      def _search_filament_param_value(self, dict_obj, filament_vendor, filament_main_type, filament_sub_type, key_name):
@@ -130,7 +131,7 @@ resolves to.
          key = f'{filament_vendor}_{filament_main_type}_{filament_sub_type}_{key_name}'
          default_fill = 'generic'
  
-@@ -1824,6 +1916,21 @@
+@@ -1824,6 +1917,21 @@
  
          return is_allow
  
