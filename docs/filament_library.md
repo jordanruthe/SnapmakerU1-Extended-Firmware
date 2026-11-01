@@ -77,8 +77,8 @@ action is under **Restart Screen** in [firmware-config](firmware_config.md)
 In the filament editor on the printer:
 
 - Brands that are not Snapmaker, Polymaker or Generic appear as extra brand
-  buttons **below** those three. Brands beyond the fourth need scrolling the
-  brand column (being verified on hardware).
+  buttons **below** those three. Brands beyond the fourth are reached by
+  scrolling the brand column (swipe up).
 - Materials for Snapmaker and Polymaker are added to their lists where the
   stock list has free slots.
 - Subtypes appear as `MATERIAL#Subtype`.
@@ -109,6 +109,11 @@ Load, unload and print temperatures are shared by all entries with the same
 brand, material and subtype: the **first** one in the library is used. Use a
 different subtype if two filaments need different temperatures.
 
+An entry with brand `Generic` (or blank) also covers that material for brands
+that have no entry of their own, but it does not change the built-in
+temperatures of Snapmaker or Polymaker filaments. Add an entry with that
+brand to change those.
+
 ## Checking Temperatures
 
 Run in the Fluidd/Mainsail console:
@@ -135,7 +140,8 @@ Klipper's temperatures.
   stock options only appear.
 - **Wrong load temperature**: use `FILAMENT_LIBRARY_QUERY` and check for an
   earlier entry with the same brand, material and subtype.
-- **Logs**: the loader logs why it skipped an entry or did not patch the
-  screen under `[gui-vendors]`. Use **Collect System Logs** in
-  [firmware-config](firmware_config.md), or `/var/log/messages` when `syslog`
-  logging is enabled.
+- **Logs**: the touchscreen logs why it skipped an entry or left the screen
+  unmodified as `[gui-vendors]` lines in the `syslog` log file
+  (`printer_data/logs/syslog`, listed with the other logs in Fluidd/Mainsail).
+  **Collect System Logs** in [firmware-config](firmware_config.md) includes
+  it.

@@ -50,6 +50,12 @@ Matching is case-insensitive. A blank vendor or sub type behaves like
 3. generic vendor + type + sub type
 4. generic vendor + type, any sub type
 
+An entry for the vendor itself (1-2) overrides the stock tables. A generic
+entry (3-4) standing in for another vendor only fills in values the stock
+tables have no vendor-specific key for: a blank-vendor `PLA` entry changes
+`Acme PLA` but not Snapmaker or Polymaker PLA temperatures. For the vendor
+`Generic` itself a generic entry counts as exact.
+
 No match: stock tables, unchanged.
 
 ## G-code

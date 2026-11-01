@@ -40,12 +40,16 @@ restart (firmware-config **Restart Screen**, or kill `gui`).
 
 ```bash
 # Analyser on an extracted rootfs, including a static apply + re-disassembly
+# (the build runs the same with --dry-run-rows 32)
 python3 -I overlays/firmware-extended/44-feature-gui-vendors/scripts/analyze_gui.py \
   tmp/extracted-2.0.0/rootfs/usr/bin/gui -o /tmp/gui.patch --dry-run-apply
+
+# Analyser on every tmp/extracted-* GUI plus mutated copies it must reject
+overlays/firmware-extended/44-feature-gui-vendors/test/run.sh
 
 # Loader host unit tests
 make -C overlays/firmware-extended/44-feature-gui-vendors/apps/gui-vendors test
 ```
 
 The loader's self-test against the real GUI under qemu-user is described in
-the loader README. Needs `python3-capstone` (in the dev container).
+the loader README. Needs `python3-capstone` 5.x (in the dev container).
