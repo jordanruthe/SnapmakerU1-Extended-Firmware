@@ -17,6 +17,7 @@
 #define GV_TYPE_LEN         32
 #define GV_SUBTYPE_LEN      32     /* GUI strncpy()s type/subtype to 31 chars */
 #define GV_LIBRARY_MAX_SIZE (1024 * 1024)
+#define GV_JSON_MAX_DEPTH   32     /* max {}/[] nesting of the library file */
 
 /* ---- logging --------------------------------------------------------- */
 

@@ -219,6 +219,28 @@ static void test_library(void)
     }
     gv_library_free(&lib);
 
+    /* deep nesting is rejected up front: jsmn is quadratic in depth and
+     * tok_span() recurses, either would hang or crash the GUI's constructor */
+    {
+        enum { DEPTH = 400000 };
+        const char *head = "{\"x\":", *tail = ",\"filaments\":[{\"type\":\"PLA\",\"y\":[]}]}";
+        char *js = malloc(strlen(head) + 2 * DEPTH + strlen(tail) + 1), *p = js;
+        CHECK(js != NULL);
+        if (js) {
+            p += sprintf(p, "%s", head);
+            memset(p, '[', DEPTH); p += DEPTH;
+            memset(p, ']', DEPTH); p += DEPTH;
+            strcpy(p, tail);
+            CHECK(lib_parse(js, &lib) < 0 && lib.n == 0);
+            gv_library_free(&lib);
+            free(js);
+        }
+        /* brackets inside strings do not count */
+        CHECK(lib_parse("{\"x\":[[[[\"]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]\"]]]],"
+                        "\"filaments\":[{\"type\":\"PLA\"}]}", &lib) == 0 && lib.n == 1);
+        gv_library_free(&lib);
+    }
+
     /* unicode and escapes */
     CHECK(lib_parse(
         "{\"filaments\":[{\"vendor\":\"Pol\\u00ffmer\",\"type\":\"PLA\","

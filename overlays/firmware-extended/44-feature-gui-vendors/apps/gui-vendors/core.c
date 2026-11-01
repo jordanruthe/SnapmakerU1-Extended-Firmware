@@ -552,6 +552,33 @@ static int get_member(const char *js, const jsmntok_t *t, int obj, const char *k
     return 0;
 }
 
+/*
+ * Nesting depth of JSON text, outside strings. jsmn's closing-bracket walk
+ * is O(depth) and tok_span() recurses per level, so deep nesting would hang
+ * or overflow the stack of the GUI's constructor: reject it up front.
+ */
+static int json_depth_ok(const char *js, size_t len)
+{
+    int depth = 0, in_str = 0;
+    for (size_t i = 0; i < len && js[i]; i++) {
+        char c = js[i];
+        if (in_str) {
+            if (c == '\\')
+                i++;
+            else if (c == '"')
+                in_str = 0;
+        } else if (c == '"') {
+            in_str = 1;
+        } else if (c == '{' || c == '[') {
+            if (++depth > GV_JSON_MAX_DEPTH)
+                return 0;
+        } else if (c == '}' || c == ']') {
+            depth--;
+        }
+    }
+    return 1;
+}
+
 int gv_library_parse(const char *json, size_t len, struct gv_library *lib,
                      char *err, size_t errlen)
 {
@@ -563,6 +590,10 @@ int gv_library_parse(const char *json, size_t len, struct gv_library *lib,
     lib->entries = NULL;
     lib->n = 0;
 
+    if (!json_depth_ok(json, len)) {
+        set_err(err, errlen, "JSON nested deeper than %d levels", GV_JSON_MAX_DEPTH);
+        return -1;
+    }
     jsmn_init(&p);
     ntok = jsmn_parse(&p, json, len, NULL, 0);
     if (ntok < 0) {

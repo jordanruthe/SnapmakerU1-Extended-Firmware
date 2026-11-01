@@ -94,9 +94,11 @@ function hiddenOnTouchscreen(vendor, type, subType) {
     return /[\s#*;'"]/.test(vendor || '') || /[\s#*;'"]/.test(type || '') || /[#*;'"]/.test(subType || '');
 }
 
-// Gcode string parameters cannot carry a double quote.
+// Gcode string parameters cannot carry a double quote, and Klipper runs each
+// line of a script as its own command, so a newline (e.g. in a Spoolman name)
+// would inject gcode: drop control characters too.
 function gcodeString(value) {
-    return `"${cleanText(value).replace(/"/g, '')}"`;
+    return `"${cleanText(String(value ?? '').replace(/[\x00-\x1f\x7f]+/g, ' ')).replace(/"/g, '')}"`;
 }
 
 // ── Library dialog ────────────────────────────────────────────────────────
@@ -334,8 +336,12 @@ function renderSpoolmanImportList() {
 }
 
 async function importSpoolmanFilaments(filaments) {
+    // importSpoolmanFilament() updates entries in place: keep a copy so a
+    // failed save does not leave unsaved changes for the next save to write.
+    const previous = libraryFilaments.map(entry => ({ ...entry }));
     const count = filaments.filter(importSpoolmanFilament).length;
     if (!count) {
+        libraryFilaments = previous;
         showStatus('Nothing to import: Spoolman filaments need a material', 'error');
         return;
     }
@@ -344,6 +350,7 @@ async function importSpoolmanFilaments(filaments) {
         showRestartNotice();
         showStatus(`Imported ${count} filament${count === 1 ? '' : 's'} from Spoolman`, 'success');
     } catch (err) {
+        libraryFilaments = previous;
         showStatus(err.message, 'error');
     }
     renderSpoolmanImportList();
