@@ -85,10 +85,23 @@ def gcode(script):
                 "FILAMENT_SUBTYPE": "filament_sub_type", "FILAMENT_COLOR_RGBA": "filament_color_rgba"}
         for a, k in keys.items():
             if a in args:
-                PTC[k][e] = args[a]
+                PTC[k][e] = args[a].strip("'\"")   # klippy unquotes the value
         if "SOFT" in args:
             PTC["filament_soft"][e] = bool(int(args["SOFT"]))
         sys.stderr.write("fake-klippy: %s\n" % line)
+        notify({"print_task_config": copy.deepcopy(PTC)})
+
+SUBSCRIBERS = []   # (connection, response_template) from objects/subscribe
+
+def notify(status):
+    """Push a status update to subscribers, as klippy does (Moonraker -> GUI)."""
+    for conn, tmpl in list(SUBSCRIBERS):
+        msg = dict(tmpl)
+        msg["params"] = {"status": status, "eventtime": time.monotonic()}
+        try:
+            conn.sendall(json.dumps(msg).encode() + ETX)
+        except OSError:
+            pass
 
 def handle(method, params):
     if method == "info":
@@ -132,6 +145,8 @@ def serve(conn):
                     continue
                 with lock:
                     res = handle(req.get("method"), req.get("params") or {})
+                    if req.get("method") == "objects/subscribe":
+                        SUBSCRIBERS.append((conn, (req.get("params") or {}).get("response_template") or {}))
                 if req.get("id") is not None:
                     conn.sendall(json.dumps({"id": req["id"], "result": res}).encode() + ETX)
     except OSError:

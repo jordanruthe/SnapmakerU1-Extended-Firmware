@@ -29,6 +29,7 @@ usage: $0 <command> [args]
                             wait for SSH and HTTP (START_TIMEOUT=${START_TIMEOUT}s)
   snap <out.png>            save a screenshot of the touchscreen
   tap <x> <y>               tap at panel coordinates (480x320)
+  swipe <x1> <y1> <x2> <y2> drag from (x1,y1) to (x2,y2) (Remote Screen down/move/up)
   ssh <cmd...>              run a command as root on the emulated printer
   open-filament-edit [n]    from the home screen, open the filament Edit dialog
                             of extruder n (1-4, default 1)
@@ -246,6 +247,25 @@ cmd_tap() {
   die "GUI ignored tap $1,$2"
 }
 
+# Drag with Remote Screen's a=down/move/up (in ~8 px steps, so LVGL sees a scroll).
+cmd_swipe() {
+  [[ $# -eq 4 ]] || usage
+  local x1=$1 y1=$2 x2=$3 y2=$4 n i x y base="http://127.0.0.1:$HTTP_PORT/screen/touch"
+  local dx=$((x2 - x1)) dy=$((y2 - y1)) len
+  len=$(( ${dx#-} > ${dy#-} ? ${dx#-} : ${dy#-} ))
+  n=$(( len / 8 + 1 ))
+  curl -fs --max-time 10 -o /dev/null -X POST "$base?a=down&x=$x1&y=$y1" || die "swipe failed"
+  sleep 0.3
+  for i in $(seq "$n"); do
+    x=$((x1 + dx * i / n)); y=$((y1 + dy * i / n))
+    curl -fs --max-time 10 -o /dev/null -X POST "$base?a=move&x=$x&y=$y" || die "swipe failed"
+    sleep 0.1
+  done
+  sleep 0.3
+  curl -fs --max-time 10 -o /dev/null -X POST "$base?a=up&x=$x2&y=$y2" || die "swipe failed"
+  sleep "${TAP_DELAY:-1.5}"
+}
+
 # Recorded from the 2.0.0 stock GUI at 480x320 (reference screenshots in
 # docs/development.md). Start from the home screen:
 #   home -> extruder n circle -> Filament -> pencil under extruder n
@@ -286,6 +306,7 @@ case "$cmd" in
   start) cmd_start "$@" ;;
   snap) cmd_snap "$@" ;;
   tap) cmd_tap "$@" ;;
+  swipe) cmd_swipe "$@" ;;
   ssh) ssh_cmd "$@" ;;
   open-filament-edit) cmd_open_filament_edit "$@" ;;
   restart-gui) cmd_restart_gui ;;

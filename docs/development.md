@@ -269,6 +269,7 @@ Commands:
   Remote Screen answer (about 5 minutes under emulation)
 - `snap <out.png>` - save a 480x320 screenshot of the touchscreen
 - `tap <x> <y>` - tap at panel coordinates and wait for the GUI to react
+- `swipe <x1> <y1> <x2> <y2>` - drag from one point to another, e.g. to scroll a list
 - `ssh <cmd...>` - run a command as `root` on the emulated printer
 - `open-filament-edit [1-4]` - from the home screen, open the filament type
   list (vendor buttons) of an extruder
