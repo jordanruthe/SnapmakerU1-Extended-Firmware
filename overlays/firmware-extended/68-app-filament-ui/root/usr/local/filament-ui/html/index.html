@@ -8,7 +8,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Filament Manager</title>
-<link rel="stylesheet" href="style.css?v=3">
+<link rel="stylesheet" href="style.css?v=9">
 </head>
 <body>
 <nav id="back-links" class="back-links" hidden>
@@ -20,6 +20,7 @@
     <div class="status-bar">
         <span id="connection-status" class="status-dot disconnected"></span>
         <span id="connection-text">Connecting…</span>
+        <button id="open-library" class="header-btn header-btn-secondary">Filament library</button>
         <button id="refresh-all" class="header-btn" disabled>Read spool tags</button>
     </div>
 </header>
@@ -196,6 +197,146 @@
     </div>
 </div>
 
+<!-- Filament Library Modal -->
+<div id="library-modal" class="tag-edit-overlay" style="display:none">
+    <div class="tag-edit-dialog spoolman-dialog" role="dialog" aria-modal="true">
+        <div class="tag-edit-header">
+            <h2 class="tag-edit-title" id="library-modal-title">Filament Library</h2>
+            <button class="tag-edit-close" id="library-close" type="button" aria-label="Close">&times;</button>
+        </div>
+        <div class="tag-edit-body spoolman-body">
+            <p class="dialog-intro" id="library-intro"></p>
+            <input type="text" id="library-search" class="spoolman-search" autocomplete="off">
+            <label id="library-spools-only-row" class="library-check" style="display:none">
+                <input type="checkbox" id="library-spools-only" checked>
+                Only filaments with a spool in Spoolman
+            </label>
+            <div id="library-list" class="spoolman-list"></div>
+            <div id="library-stale" class="library-restart" style="display:none">
+                <span id="library-stale-text"></span>
+                <button type="button" id="library-stale-btn" class="channel-action-btn">Remove</button>
+            </div>
+            <div id="library-restart" class="library-restart" style="display:none">
+                <span>Restart the screen to show changes on the touchscreen</span>
+                <button type="button" id="library-restart-btn" class="channel-action-btn">Restart screen</button>
+            </div>
+        </div>
+        <div class="tag-edit-footer">
+            <div class="modal-actions">
+                <button type="button" id="library-order" class="modal-btn-cancel">Brand order</button>
+                <button type="button" id="library-import" class="modal-btn-cancel">Import from Spoolman</button>
+                <button type="button" id="library-import-all" class="modal-btn-submit" style="display:none">Import all shown</button>
+                <button type="button" id="library-add" class="modal-btn-submit">Add filament</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Touchscreen Brand Order Modal -->
+<div id="brand-order-modal" class="tag-edit-overlay" style="display:none">
+    <div class="tag-edit-dialog" role="dialog" aria-modal="true">
+        <div class="tag-edit-header">
+            <h2 class="tag-edit-title">Touchscreen Brand Order</h2>
+            <button class="tag-edit-close brand-order-close" type="button" aria-label="Close">&times;</button>
+        </div>
+        <div class="tag-edit-body">
+            <p class="dialog-intro">Order of the brand buttons in the touchscreen's filament editor. Snapmaker, Polymaker and Generic always come first.</p>
+            <div class="brand-order-mode">
+                <label class="library-check"><input type="radio" name="brand-order-mode" value="alpha"> Alphabetical</label>
+                <label class="library-check"><input type="radio" name="brand-order-mode" value="custom"> Custom</label>
+            </div>
+            <ol id="brand-order-list" class="brand-order-list"></ol>
+        </div>
+        <div class="tag-edit-footer">
+            <div class="modal-actions">
+                <button type="button" class="modal-btn-cancel brand-order-close">Cancel</button>
+                <button type="button" id="brand-order-save" class="modal-btn-submit">Save</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Filament Library Edit Modal -->
+<div id="library-edit-modal" class="tag-edit-overlay" style="display:none">
+    <div class="tag-edit-dialog" role="dialog" aria-modal="true">
+        <div class="tag-edit-header">
+            <h2 class="tag-edit-title" id="library-edit-title">Add Filament</h2>
+            <button class="tag-edit-close library-edit-close" type="button" aria-label="Close">&times;</button>
+        </div>
+        <div class="tag-edit-body">
+            <form id="library-edit-form">
+                <input type="hidden" name="id">
+                <datalist id="le-vendor-list"></datalist>
+                <datalist id="le-type-list"></datalist>
+                <datalist id="le-subtype-list"></datalist>
+
+                <div class="form-row">
+                    <label class="form-label">Name
+                        <input type="text" name="name" placeholder="e.g. eSun PLA+ Black" autocomplete="off">
+                    </label>
+                    <label class="form-label">Brand *
+                        <input type="text" name="vendor" list="le-vendor-list" required autocomplete="off">
+                    </label>
+                </div>
+
+                <div class="form-row">
+                    <label class="form-label">Material *
+                        <input type="text" name="type" id="le-type" list="le-type-list" required autocomplete="off">
+                    </label>
+                    <label class="form-label">Subtype
+                        <input type="text" name="sub_type" list="le-subtype-list" placeholder="Any" autocomplete="off">
+                    </label>
+                </div>
+
+                <div class="form-row" id="le-base-type-row">
+                    <label class="form-label">Behaves like
+                        <select name="base_type" id="le-base-type"></select>
+                        <span class="form-hint">The printer has no flow or speed values for this material, so it uses this one's.</span>
+                    </label>
+                </div>
+
+                <label class="form-label field-block">Colors
+                    <div class="library-colors">
+                        <div id="le-colors" class="library-colors"></div>
+                        <button type="button" id="le-color-add" class="channel-action-btn">+ Color</button>
+                    </div>
+                </label>
+
+                <div class="form-row">
+                    <label class="form-label">Load (&deg;C)
+                        <input type="number" name="load_temp" min="150" max="350" step="1" placeholder="Default">
+                    </label>
+                    <label class="form-label">Unload (&deg;C)
+                        <input type="number" name="unload_temp" min="150" max="350" step="1" placeholder="Default">
+                    </label>
+                    <label class="form-label">Print (&deg;C)
+                        <input type="number" name="print_temp" min="150" max="350" step="1" placeholder="Default">
+                    </label>
+                    <label class="form-label">Flexibility
+                        <select name="is_soft">
+                            <option value="">Default</option>
+                            <option value="0">Rigid</option>
+                            <option value="1">Soft (TPU-like)</option>
+                        </select>
+                    </label>
+                </div>
+                <p class="form-hint">Temperatures left blank use the printer's built-in value for this material.
+                    Filaments with the same brand, material and subtype share one set of temperatures: the first one in the library is used.</p>
+
+                <p class="form-hint" id="le-preview"></p>
+                <p class="form-hint library-error" id="le-error" style="display:none"></p>
+                <p class="form-hint library-warning" id="le-warning" style="display:none"></p>
+
+                <div class="modal-actions">
+                    <button type="button" id="library-delete" class="modal-btn-danger">Delete</button>
+                    <button type="button" class="modal-btn-cancel library-edit-close">Cancel</button>
+                    <button type="submit" class="modal-btn-submit">Save</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
 <!-- Confirmation modal -->
 <div id="confirm-modal" class="tag-edit-overlay" style="display:none">
     <div class="tag-edit-dialog confirm-dialog" role="dialog" aria-modal="true">
@@ -217,6 +358,7 @@
 // Not when embedded as a Fluidd camera
 if (window.top === window) document.getElementById('back-links').hidden = false;
 </script>
-<script src="script.js?v=3"></script>
+<script src="script.js?v=4"></script>
+<script src="library.js?v=6"></script>
 </body>
 </html>
