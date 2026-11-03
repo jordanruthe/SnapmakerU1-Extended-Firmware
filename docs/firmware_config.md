@@ -74,6 +74,7 @@ Available actions:
 - **Collect System Logs** - Generate and download system logs for debugging
 - **Restart Klipper** - Restart the Klipper service
 - **Restart Moonraker** - Restart the Moonraker service
+- **Restart Screen** - Restart the touchscreen GUI, e.g. to show [Filament Library](filament_library.md) changes
 - **Reboot System** - Reboot the printer
 - **Revert Changes** - Remove configuration changes and disable data persistence
 - **Recover to Backup Firmware** - Restore previous firmware version

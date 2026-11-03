@@ -34,6 +34,10 @@ Enable in the [firmware-config](firmware_config.md) web interface under
 URL including scheme and port (e.g. `http://192.168.1.100:7912`). Set the same
 toggle to **Disabled** to turn it off.
 
+## Importing Filaments
+
+Spoolman filaments can be imported into the [Filament Library](filament_library.md#importing-from-spoolman) to apply them to an extruder from the web and show them on the stock touchscreen.
+
 ## Creating a Spool
 
 The **Create** tab of the **Spoolman** dialog makes a new spool for the
