@@ -29,6 +29,7 @@ RUN apt-get update -y && \
       ffmpeg \
       u-boot-tools \
       python3 \
+      python3-capstone \
     && apt-get -y install ccache \
     && git config --global --add safe.directory '*' \
     && rm -rf /var/lib/apt/lists/*
