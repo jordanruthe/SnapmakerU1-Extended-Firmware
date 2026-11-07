@@ -173,7 +173,9 @@ class FirmwareConfigHandler(SimpleHTTPRequestHandler):
 
             log(f"Action: {action}")
 
-            if cfg.get("background"):
+            if cfg.get("upload_path"):
+                self.handle_action_upload(action, cfg)
+            elif cfg.get("background"):
                 self._start_text_stream()
                 self._write_stream_chunk(f"=== {action} ===\n")
                 self._write_stream_chunk(f"{cfg['message']}\n")
@@ -195,6 +197,37 @@ class FirmwareConfigHandler(SimpleHTTPRequestHandler):
             log(f"Action error: {e}")
             self.send_error(500, str(e))
 
+    def handle_action_upload(self, action, cfg):
+        """Actions with `upload_path` take a multipart `file`, saved there and
+        passed to `cmd` as its last argument, then removed."""
+        content_type = self.headers.get("Content-Type", "")
+        if "multipart/form-data" not in content_type:
+            self.send_error(400, "Expected multipart/form-data")
+            return
+
+        file_path, file_size = self.stream_multipart_to_file("file", cfg["upload_path"])
+        if not file_path:
+            self.send_error(400, "No file in request")
+            return
+
+        log(f"Uploaded: {file_path} ({file_size} bytes)")
+        try:
+            self._start_text_stream()
+            self._write_stream_chunk(f"=== {cfg.get('label', action)} ===\n")
+            self._write_stream_chunk(f"{cfg['message']}\n")
+            self._write_stream_chunk(f"Size: {file_size} bytes\n\n")
+            exit_code, stopped = self._stream_command(cfg["cmd"] + [file_path], stop_token=cfg.get("stop_token"))
+            if exit_code == 0 or stopped:
+                self._write_stream_chunk(f"\nSUCCESS: Completed successfully (exit code: 0)\n")
+            else:
+                self._write_stream_chunk(f"\nERROR: Failed with exit code: {exit_code}\n")
+            self._finish_text_stream()
+        finally:
+            try:
+                os.unlink(file_path)
+            except Exception:
+                pass
+
     def handle_action_download(self, action):
         try:
             cfg = self._get_action_config(action)
@@ -212,7 +245,8 @@ class FirmwareConfigHandler(SimpleHTTPRequestHandler):
                 self.send_error(404, f"Download file not found: {download_file}")
                 return
 
-            filename = os.path.basename(download_file)
+            # `download_name` is a strftime() template, e.g. "backup-%Y%m%d.tgz"
+            filename = time.strftime(cfg.get("download_name") or os.path.basename(download_file))
             self.send_response(200)
             self.send_header("Content-Type", "application/octet-stream")
             self.send_header("Content-Disposition", f'attachment; filename="{filename}"')
@@ -497,6 +531,8 @@ class FirmwareConfigHandler(SimpleHTTPRequestHandler):
                         "confirm": cfg.get("confirm", False),
                         "background": cfg.get("background", False),
                         "download_file": cfg.get("download_file"),
+                        "upload": bool(cfg.get("upload_path")),
+                        "upload_accept": cfg.get("upload_accept"),
                         "hidden": cfg.get("hidden", False)
                     })
                 if actions_list:

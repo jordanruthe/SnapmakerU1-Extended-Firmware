@@ -672,6 +672,11 @@
             const actionConfig = actionsData.find(a => a.id === id);
             const title = actionConfig?.label || id;
 
+            if (actionConfig?.upload) {
+                pickActionFile(id, title, actionConfig);
+                return;
+            }
+
             if (actionConfig?.confirm) {
                 const message = typeof actionConfig.confirm === 'string'
                     ? actionConfig.confirm
@@ -682,15 +687,37 @@
             }
         }
 
-        function doRunAction(id, title) {
-            showActionModal(title, 'Executing...');
-            $('action-log').classList.add('visible');
-            execAction(id);
+        // Actions with an upload_path ask for a file first, then confirm
+        function pickActionFile(id, title, actionConfig) {
+            const input = document.createElement('input');
+            input.type = 'file';
+            if (actionConfig.upload_accept) input.accept = actionConfig.upload_accept;
+            input.onchange = () => {
+                const file = input.files[0];
+                if (!file) return;
+                const confirmMsg = typeof actionConfig.confirm === 'string'
+                    ? actionConfig.confirm
+                    : `Are you sure you want to run "${title}"?`;
+                showConfirmModal(title, `${file.name} (${formatSize(file.size)})\n\n${confirmMsg}`,
+                    () => doRunAction(id, title, file));
+            };
+            input.click();
         }
 
-        async function execAction(id) {
+        function doRunAction(id, title, file = null) {
+            showActionModal(title, file ? 'Uploading...' : 'Executing...');
+            $('action-log').classList.add('visible');
+            execAction(id, file);
+        }
+
+        async function execAction(id, file = null) {
             try {
-                const resp = await apiFetch(`api/action/${id}`, { method: 'POST' });
+                const opts = { method: 'POST' };
+                if (file) {
+                    opts.body = new FormData();
+                    opts.body.append('file', file);
+                }
+                const resp = await apiFetch(`api/action/${id}`, opts);
                 await streamResponse(resp, id);
                 refreshAll();
             } catch (e) {
