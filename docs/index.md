@@ -47,6 +47,7 @@ Heavily expanded firmware with extensive features and customization:
 
 - [Firmware Configuration](firmware_config.md) - Customize firmware behavior via web interface or config file
 - [Fluidd or Mainsail](firmware_config.md#web) (selectable) - Choose your preferred web interface
+- [Filament Mapping for Web Prints](print_filament_mapping.md) - Pick which loaded filament each tool uses, plus bed leveling, flow calibration and timelapse, when printing from Fluidd or Mainsail, like on the touchscreen
 - [Firmware Upgrade Channels](firmware_upgrade.md) - Redirect or disable the stock firmware-update check
 
 **Camera & Media:**
