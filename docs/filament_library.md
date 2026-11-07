@@ -77,6 +77,9 @@ out cleanly. Set them by hand only for unusual materials. Importing the same
 Spoolman filament again updates the existing entry and keeps the load/unload
 temperatures you set by hand.
 
+Print temperatures below 190 °C are imported as 190 °C (see
+[Minimum Temperatures](#minimum-temperatures)).
+
 ## Touchscreen
 
 After a library change the dialog offers **Restart screen**. The touchscreen
@@ -128,6 +131,17 @@ that have no entry of their own, but it does not change the built-in
 temperatures of Snapmaker or Polymaker filaments. Add an entry with that
 brand to change those.
 
+### Minimum Temperatures
+
+Klipper won't extrude below 170 °C, so load and unload temperatures can't be
+lower. Print temperature can't be below 190 °C: the extruder offset
+calibration heats each nozzle to 20 °C under it and then purges, and fails
+with `extruder below minimum temp` if that is under 170 °C.
+
+Entries saved before this limit keep their value until edited: open the
+entry and raise it (the editor won't save it as is), or import it from
+Spoolman again.
+
 ## Checking Temperatures
 
 Run in the Fluidd/Mainsail console:
@@ -154,6 +168,9 @@ Klipper's temperatures.
   stock options only appear.
 - **Wrong load temperature**: use `FILAMENT_LIBRARY_QUERY` and check for an
   earlier entry with the same brand, material and subtype.
+- **`extruder below minimum temp` during calibration**: the filament's print
+  temperature is under 190 °C (see
+  [Minimum Temperatures](#minimum-temperatures)).
 - **Logs**: the touchscreen logs why it skipped an entry or left the screen
   unmodified as `[gui-vendors]` lines in the `syslog` log file
   (`printer_data/logs/syslog`, listed with the other logs in Fluidd/Mainsail).

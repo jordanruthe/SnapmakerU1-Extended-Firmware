@@ -35,12 +35,15 @@ sm_filaments = [
     {'id': 7, 'name': 'PLA+ Black', 'material': 'pla+', 'color_hex': '111111', 'settings_extruder_temp': 215, 'vendor': {'name': 'eSun'}, 'extra': {}},
     {'id': 9, 'name': 'Silk Dual', 'material': 'PLA', 'multi_color_hexes': 'FFD700,C0C0C0', 'vendor': {'name': 'Sunlu'}, 'extra': {'variant': '"Silk"'}},
     {'id': 11, 'name': 'Bambu PLA', 'material': 'PLA', 'color_hex': 'FF8800', 'vendor': {'name': 'Bambu Lab'}, 'extra': {}},
+    # Below the minimum print temperature; imported at 190
+    {'id': 13, 'name': 'Matte PLA', 'material': 'PLA', 'color_hex': 'EEEEEE', 'settings_extruder_temp': 180, 'vendor': {'name': 'Elegoo'}, 'extra': {}},
 ]
-# #7 and #9 have spools (#9 with unknown weight); #11's only spool is empty.
+# #7, #9 and #13 have spools (#9 with unknown weight); #11's only spool is empty.
 sm_spools = [
     {'id': 1, 'filament': {'id': 7}, 'remaining_weight': 500, 'archived': False},
     {'id': 2, 'filament': {'id': 9}, 'remaining_weight': None, 'archived': False},
     {'id': 3, 'filament': {'id': 11}, 'remaining_weight': 0, 'archived': False},
+    {'id': 4, 'filament': {'id': 13}, 'remaining_weight': 1000, 'archived': False},
 ]
 
 def ws_handler(ws):
@@ -106,6 +109,15 @@ with sync_playwright() as pw:
     page.click('#le-color-add')
     page.fill('#library-edit-form [name=load_temp]', '230')
     page.fill('#library-edit-form [name=unload_temp]', '220')
+    # Minimums: min_extrude_temp, and 20 above it for print (offset calibration)
+    page.fill('#library-edit-form [name=print_temp]', '180')
+    assert not page.eval_on_selector('#library-edit-form', 'f => f.checkValidity()')
+    page.fill('#library-edit-form [name=print_temp]', '190')
+    page.fill('#library-edit-form [name=load_temp]', '160')
+    assert not page.eval_on_selector('#library-edit-form', 'f => f.checkValidity()')
+    page.fill('#library-edit-form [name=load_temp]', '230')
+    assert page.eval_on_selector('#library-edit-form', 'f => f.checkValidity()')
+    page.fill('#library-edit-form [name=print_temp]', '')
     assert page.inner_text('#le-preview') == 'On the touchscreen: Overture → PLA+', page.inner_text('#le-preview')
     assert not page.is_visible('#le-warning')
     page.screenshot(path=f'{OUT}/1-edit.png')
@@ -150,6 +162,7 @@ with sync_playwright() as pw:
     page.screenshot(path=f'{OUT}/3-library.png')
     lib = json.loads(state['library'])['filaments']
     print('after import:', json.dumps(lib))
+    assert [f['print_temp'] for f in lib if f.get('spoolman_filament_id') == 13] == [190]
     page.click('#library-close')
 
     # 3. Apply to extruder 2 (non-official) - no confirm
@@ -185,7 +198,7 @@ with sync_playwright() as pw:
     page.click('#library-list .spoolman-item:has-text("Overture PLA+ Grey")')
     page.click('#library-delete'); page.click('#confirm-accept')
     page.wait_for_selector('#library-list .spoolman-name:has-text("Overture")', state='detached')
-    assert [f['name'] for f in json.loads(state['library'])['filaments']] == ['PLA+ Black', 'Silk Dual', 'Bambu PLA']
+    assert [f['name'] for f in json.loads(state['library'])['filaments']] == ['PLA+ Black', 'Silk Dual', 'Bambu PLA', 'Matte PLA']
     print('after delete:', [f['name'] for f in json.loads(state['library'])['filaments']], 'uploads:', state['uploads'])
 
     # 5b. Entries whose Spoolman filament has no spool left can be removed
@@ -197,7 +210,7 @@ with sync_playwright() as pw:
     page.screenshot(path=f'{OUT}/9-stale.png')
     page.click('#library-stale-btn'); page.click('#confirm-accept')
     page.wait_for_selector('#library-stale', state='hidden')
-    assert [f['name'] for f in json.loads(state['library'])['filaments']] == ['PLA+ Black', 'Silk Dual']
+    assert [f['name'] for f in json.loads(state['library'])['filaments']] == ['PLA+ Black', 'Silk Dual', 'Matte PLA']
     page.click('#library-import')  # back to library
 
     # 6. Narrow viewport

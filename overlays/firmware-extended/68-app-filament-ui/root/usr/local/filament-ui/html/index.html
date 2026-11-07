@@ -304,13 +304,13 @@
 
                 <div class="form-row">
                     <label class="form-label">Load (&deg;C)
-                        <input type="number" name="load_temp" min="150" max="350" step="1" placeholder="Default">
+                        <input type="number" name="load_temp" max="350" step="1" placeholder="Default">
                     </label>
                     <label class="form-label">Unload (&deg;C)
-                        <input type="number" name="unload_temp" min="150" max="350" step="1" placeholder="Default">
+                        <input type="number" name="unload_temp" max="350" step="1" placeholder="Default">
                     </label>
                     <label class="form-label">Print (&deg;C)
-                        <input type="number" name="print_temp" min="150" max="350" step="1" placeholder="Default">
+                        <input type="number" name="print_temp" max="350" step="1" placeholder="Default">
                     </label>
                     <label class="form-label">Flexibility
                         <select name="is_soft">
@@ -321,6 +321,7 @@
                     </label>
                 </div>
                 <p class="form-hint">Temperatures left blank use the printer's built-in value for this material.
+                    Load and unload can't be below 170&deg;C and print below 190&deg;C: the extruder offset calibration heats to 20&deg;C under it and can't extrude under 170&deg;C.
                     Filaments with the same brand, material and subtype share one set of temperatures: the first one in the library is used.</p>
 
                 <p class="form-hint" id="le-preview"></p>
