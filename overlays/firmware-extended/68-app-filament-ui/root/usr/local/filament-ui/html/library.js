@@ -25,6 +25,16 @@ const STOCK_BRANDS = ['Snapmaker', 'Polymaker', 'Generic'];
 const BASE_TYPES = ['PLA', 'PLA-CF', 'PETG', 'PETG-CF', 'ABS', 'ASA', 'TPU',
                     'PA', 'PA-CF', 'PA-GF', 'PC', 'PC-ABS', 'PVA', 'PEBA'];
 
+// Klipper's `min_extrude_temp`; loading and unloading extrude at their
+// temperatures. The extruder offset calibration heats to 20 °C under the print
+// temperature before purging, so that must not fall below 170 °C either.
+const MIN_EXTRUDE_TEMP = 170;
+const LIBRARY_MIN_TEMPS = {
+    load_temp: MIN_EXTRUDE_TEMP,
+    unload_temp: MIN_EXTRUDE_TEMP,
+    print_temp: MIN_EXTRUDE_TEMP + 20,
+};
+
 let libraryFilaments = [];
 let libraryLoaded = false;
 // Extruder the library was opened from; null when opened to manage entries.
@@ -295,7 +305,9 @@ function spoolmanFilamentEntry(filament) {
         spoolman_filament_id: Number(filament.id),
     };
     const printTemp = finiteNumber(filament.settings_extruder_temp);
-    if (printTemp != null && printTemp > 0) entry.print_temp = Math.round(printTemp);
+    if (printTemp != null && printTemp > 0) {
+        entry.print_temp = Math.max(Math.round(printTemp), LIBRARY_MIN_TEMPS.print_temp);
+    }
     return entry;
 }
 
@@ -560,7 +572,8 @@ function openLibraryEdit(entry = null) {
     form.elements.type.value = entry?.type || 'PLA';
     form.elements.sub_type.value = entry?.sub_type || '';
     form.elements.base_type.value = entry?.base_type || '';
-    for (const key of ['load_temp', 'unload_temp', 'print_temp']) {
+    for (const [key, min] of Object.entries(LIBRARY_MIN_TEMPS)) {
+        form.elements[key].min = min;
         form.elements[key].value = finiteNumber(entry?.[key]) ?? '';
     }
     form.elements.is_soft.value = entry?.is_soft == null ? '' : (entry.is_soft ? '1' : '0');
@@ -627,7 +640,7 @@ async function handleLibrarySave(e) {
     if (!BASE_TYPES.includes(type) && form.elements.base_type.value) {
         entry.base_type = form.elements.base_type.value;
     }
-    for (const key of ['load_temp', 'unload_temp', 'print_temp']) {
+    for (const key of Object.keys(LIBRARY_MIN_TEMPS)) {
         const value = finiteNumber(form.elements[key].value);
         if (value != null && value > 0) entry[key] = Math.round(value);
     }
