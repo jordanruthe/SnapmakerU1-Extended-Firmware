@@ -13,5 +13,8 @@ set -eo pipefail
 # Keep Mainsail's service worker away from /firmware-config/ and friends (HTTPS)
 patch_sw_denylist.sh "$ROOTFS_DIR/home/lava/mainsail/sw.js" 'denylist:[/^\/(access|api|printer|server|websocket)/'
 
+# Ask which filament each tool uses when starting a print, like the touchscreen
+inject_print_map.sh "$ROOTFS_DIR/home/lava/mainsail/index.html"
+
 # Make the service worker replace its cached stock index.html with the edited one
 patch_sw_revision.sh "$ROOTFS_DIR/home/lava/mainsail/sw.js" "$ROOTFS_DIR/home/lava/mainsail/index.html"

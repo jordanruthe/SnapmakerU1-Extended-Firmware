@@ -662,6 +662,7 @@ function createChannelCard(channel) {
     actions.appendChild(mkBtn('↻ Refresh', '', () => refreshSingleChannel(channel.channel)));
     actions.appendChild(mkBtn('✎ User', '', () => openOverwriteModal(channel.channel)));
     actions.appendChild(mkBtn('Reset', '', () => resetChannel(channel.channel)));
+    actions.appendChild(mkBtn('📚 Library', '', () => openLibrary(channel.channel)));
     if (spoolmanActive) {
         actions.appendChild(mkBtn('⊕ Spoolman', '', () => openSpoolPicker(channel.channel)));
     }
@@ -1495,8 +1496,16 @@ function initializeModals() {
                 resolveConfirmation(false);
                 return;
             }
+            if (document.getElementById('library-edit-modal').style.display !== 'none') {
+                closeModal('library-edit-modal');
+                return;
+            }
+            if (document.getElementById('brand-order-modal').style.display !== 'none') {
+                closeModal('brand-order-modal');
+                return;
+            }
             closeModal('overwrite-modal'); closeModal('spoolman-modal');
-            closeModal('mismatch-modal');
+            closeModal('mismatch-modal'); closeModal('library-modal');
         }
     });
 

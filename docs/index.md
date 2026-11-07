@@ -47,6 +47,7 @@ Heavily expanded firmware with extensive features and customization:
 
 - [Firmware Configuration](firmware_config.md) - Customize firmware behavior via web interface or config file
 - [Fluidd or Mainsail](firmware_config.md#web) (selectable) - Choose your preferred web interface
+- [Filament Mapping for Web Prints](print_filament_mapping.md) - Pick which loaded filament each tool uses, plus bed leveling, flow calibration and timelapse, when printing from Fluidd or Mainsail, like on the touchscreen
 - [Firmware Upgrade Channels](firmware_upgrade.md) - Redirect or disable the stock firmware-update check
 
 **Camera & Media:**
@@ -70,6 +71,7 @@ Heavily expanded firmware with extensive features and customization:
 - [RFID Filament Tag Support](design/rfid.md) - NTAG213/215/216 support for [OpenSpool format](design/openspool.md)
 - [Alternative Filament Detection](design/rfid.md#enabling-openrfid) - Alternative detection implementations with extended spool/tag support from Bambu, Creality, Anycubic, and others
 - [Spoolman Integration](spoolman.md) - Automatic filament metadata sync and spool tracking via Spoolman, resolving spools by ID or RFID card UID, with [community companion apps](spoolman.md#apps) for tagging and linking spools
+- [Filament Library](filament_library.md) - Save your own filaments, apply them to an extruder from the web, import them from Spoolman, and show them as extra brands and materials on the stock touchscreen with correct load/unload temperatures
 - [NFC Tags & Spoolman Setup Guide](nfc_spoolman_setup.md) - Step-by-step guide to tagging spools and tracking them in Spoolman
 
 **Monitoring & Notifications:**

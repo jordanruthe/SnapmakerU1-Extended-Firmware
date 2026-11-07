@@ -16,5 +16,8 @@ patch_sw_denylist.sh "$ROOTFS_DIR/home/lava/fluidd/sw.js" 'denylist:[/\/websocke
 # Link the extended pages from Fluidd's three-dots menu
 inject_extended_nav.sh "$ROOTFS_DIR/home/lava/fluidd/index.html"
 
+# Ask which filament each tool uses when starting a print, like the touchscreen
+inject_print_map.sh "$ROOTFS_DIR/home/lava/fluidd/index.html"
+
 # Make the service worker replace its cached stock index.html with the edited one
 patch_sw_revision.sh "$ROOTFS_DIR/home/lava/fluidd/sw.js" "$ROOTFS_DIR/home/lava/fluidd/index.html"
