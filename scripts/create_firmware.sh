@@ -113,8 +113,10 @@ done
 if [[ -z "$CI" ]]; then
   echo ">> Saving chroot cache..."
   cp -a "$ROOTFS_DIR/cache/." "$CHROOT_CACHE/"
-  rm -rf "$ROOTFS_DIR/cache"
 fi
+
+echo ">> Removing build caches from rootfs..."
+rm -rf "$ROOTFS_DIR/cache" "$ROOTFS_DIR/root/.cache"
 
 echo ">> Checking for non-ARM binaries in rootfs..."
 if FILES=$(find "$ROOTFS_DIR" -type f -exec file {} + | grep "ELF" | grep -v "ARM"); then
