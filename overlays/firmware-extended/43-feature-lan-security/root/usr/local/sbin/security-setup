@@ -95,10 +95,11 @@ apply() {
 
 case "$1" in
     apply) apply ;;
+    apply-ssh) apply_ssh ;;
     auth-enabled) [[ "$(cfg auth false)" == "true" ]] ;;
     ssh-keys) [[ -s "$SSH_KEYS" ]] ;;
     *)
-        echo "Usage: $0 {apply|auth-enabled|ssh-keys}"
+        echo "Usage: $0 {apply|apply-ssh|auth-enabled|ssh-keys}"
         exit 1
         ;;
 esac

@@ -1,0 +1,56 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# SPDX-PackageHomePage: https://github.com/paxx12-snapmaker-u1/SnapmakerU1-Extended-Firmware
+# SPDX-FileCopyrightText: Copyright (c) 2026 @paxx12
+
+status:
+  ssh_keys:
+    title: SSH Keys
+    items:
+      - label: Installed keys
+        cmd: /usr/local/sbin/ssh-keys list-line
+
+settings:
+  remote_access:
+    items:
+      ssh_keys:
+        label: SSH Keys
+        description: Add or remove the public keys that may log in over SSH. With LAN security on, only these keys work (no password).
+        get_cmd:
+          - echo
+          - manage
+        options:
+          manage:
+            label: Choose an action...
+            cmd:
+              - "true"
+          add:
+            label: Add a key
+            confirm: "Paste a public key (the line from id_ed25519.pub, starting with ssh-ed25519 or ssh-rsa)."
+            inputs:
+              - name: SSH_KEY
+                label: Public key
+                placeholder: "ssh-ed25519 AAAA... you@pc"
+                regex: '^(ssh-ed25519|ssh-rsa|ecdsa-sha2-nistp(256|384|521)|sk-ssh-ed25519@openssh\.com|sk-ecdsa-sha2-nistp256@openssh\.com) [A-Za-z0-9+/=]+( [^\r\n]{0,100})?$'
+            cmd:
+              - bash
+              - -c
+              - |
+                /usr/local/sbin/ssh-keys add || exit 1
+                /usr/local/sbin/security-setup apply-ssh
+                /etc/init.d/S50dropbear restart
+          remove:
+            label: Remove a key
+            confirm: "Enter the number of the key to remove, as listed under SSH Keys in the status section. Removing the last key stops SSH from starting while LAN security is on."
+            inputs:
+              - name: SSH_KEY_ID
+                label: Key number
+                placeholder: "1"
+                regex: '^[0-9]+$'
+            cmd:
+              - bash
+              - -c
+              - |
+                /usr/local/sbin/ssh-keys remove || exit 1
+                /usr/local/sbin/security-setup apply-ssh
+                /etc/init.d/S50dropbear restart
+        default: manage

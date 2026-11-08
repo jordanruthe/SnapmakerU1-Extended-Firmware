@@ -1,0 +1,147 @@
+#!/usr/bin/env python3
+# SPDX-License-Identifier: GPL-3.0-or-later
+# SPDX-PackageHomePage: https://github.com/paxx12-snapmaker-u1/SnapmakerU1-Extended-Firmware
+# SPDX-FileCopyrightText: Copyright (c) 2026 @paxx12
+
+# Manage extended/ssh/authorized_keys from firmware-config.
+#   ssh-keys list         numbered keys, one per line
+#   ssh-keys list-line    the same on one line, for the status page
+#   ssh-keys add          adds the public key in $SSH_KEY
+#   ssh-keys remove       removes key number $SSH_KEY_ID (from "list")
+# After add/remove run "security-setup apply-ssh" to copy the file into place.
+
+import base64
+import binascii
+import hashlib
+import os
+import struct
+import sys
+
+KEYS = "/home/lava/printer_data/config/extended/ssh/authorized_keys"
+TYPES = {
+    "ssh-ed25519",
+    "ssh-rsa",
+    "ecdsa-sha2-nistp256",
+    "ecdsa-sha2-nistp384",
+    "ecdsa-sha2-nistp521",
+    "sk-ssh-ed25519@openssh.com",
+    "sk-ecdsa-sha2-nistp256@openssh.com",
+}
+MAX_COMMENT = 100
+
+
+def fail(msg):
+    print(f"ERROR: {msg}")
+    sys.exit(1)
+
+
+def parse(line):
+    """Return (type, base64, comment, blob) for a public key line, or None."""
+    parts = line.strip().split(None, 2)
+    if len(parts) < 2 or parts[0] not in TYPES:
+        return None
+    try:
+        blob = base64.b64decode(parts[1], validate=True)
+        (n,) = struct.unpack(">I", blob[:4])
+        if blob[4:4 + n].decode("ascii") != parts[0]:
+            return None
+    except (binascii.Error, struct.error, UnicodeDecodeError):
+        return None
+    return parts[0], parts[1], parts[2] if len(parts) > 2 else "", blob
+
+
+def fingerprint(blob):
+    return "SHA256:" + base64.b64encode(hashlib.sha256(blob).digest()).decode().rstrip("=")
+
+
+def read_lines():
+    try:
+        with open(KEYS, encoding="utf-8") as f:
+            return f.read().splitlines()
+    except FileNotFoundError:
+        return []
+
+
+def write_lines(lines):
+    os.makedirs(os.path.dirname(KEYS), exist_ok=True)
+    tmp = KEYS + ".tmp"
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w", encoding="utf-8") as f:
+        f.write("".join(line + "\n" for line in lines))
+    os.replace(tmp, KEYS)
+
+
+def keys():
+    """(line index, parsed key) for every valid key line"""
+    out = []
+    for i, line in enumerate(read_lines()):
+        k = parse(line) if line.strip() and not line.lstrip().startswith("#") else None
+        if k:
+            out.append((i, k))
+    return out
+
+
+def describe(n, k):
+    return f"{n}: {k[0]} {fingerprint(k[3])}" + (f" ({k[2]})" if k[2] else "")
+
+
+def cmd_list(oneline):
+    found = keys()
+    if oneline:
+        print("; ".join(describe(n, k) for n, (_, k) in enumerate(found, 1)) or "none")
+    else:
+        for n, (_, k) in enumerate(found, 1):
+            print(describe(n, k))
+
+
+def cmd_add():
+    raw = os.environ.get("SSH_KEY", "").strip()
+    if not raw:
+        fail("no key given")
+    if any(ord(c) < 32 or ord(c) == 127 for c in raw):
+        fail("a key must be one line of plain text")
+    key = parse(raw)
+    if not key:
+        fail("not a valid public key. Paste the whole line from id_ed25519.pub (ssh-ed25519 AAAA... comment)")
+    if len(key[2]) > MAX_COMMENT:
+        fail(f"comment is longer than {MAX_COMMENT} characters")
+    if any(k[3] == key[3] for _, k in keys()):
+        fail("this key is already installed")
+    lines = read_lines()
+    lines.append(f"{key[0]} {key[1]}" + (f" {key[2]}" if key[2] else ""))
+    write_lines(lines)
+    print(f"Added {fingerprint(key[3])}")
+
+
+def cmd_remove():
+    try:
+        num = int(os.environ.get("SSH_KEY_ID", ""))
+    except ValueError:
+        fail("give the number of the key to remove")
+    found = keys()
+    if not 1 <= num <= len(found):
+        fail(f"no key number {num}")
+    idx, key = found[num - 1]
+    lines = read_lines()
+    del lines[idx]
+    write_lines(lines)
+    print(f"Removed {fingerprint(key[3])}")
+    if len(found) == 1:
+        print("WARNING: no keys left. With LAN security on, SSH will not start.")
+
+
+def main():
+    cmd = sys.argv[1] if len(sys.argv) > 1 else ""
+    if cmd == "list":
+        cmd_list(False)
+    elif cmd == "list-line":
+        cmd_list(True)
+    elif cmd == "add":
+        cmd_add()
+    elif cmd == "remove":
+        cmd_remove()
+    else:
+        fail("usage: ssh-keys {list|list-line|add|remove}")
+
+
+main()

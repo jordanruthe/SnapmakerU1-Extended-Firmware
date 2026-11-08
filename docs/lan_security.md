@@ -39,7 +39,9 @@ Use the API key: **Security > Show API Key**, sent as the `X-Api-Key` header. In
 
 ### SSH keys
 
-Put your public keys, one per line, in `extended/ssh/authorized_keys` (edit it in Fluidd's config editor). They are copied to `/root/.ssh` and `/home/lava/.ssh` at boot. With LAN security on, password logins are refused and SSH does not start at all while that file is empty.
+Manage the keys that may log in in `http://<printer-ip>/firmware-config/` under **Remote Access > SSH Keys**: choose **Add a key** and paste the public key (the line from `id_ed25519.pub`), or **Remove a key** and enter its number. The keys installed are listed, with fingerprints, in the **SSH Keys** status section; compare them with `ssh-keygen -lf id_ed25519.pub`. Only valid key types are accepted, and a key can't carry options such as `command=`.
+
+The keys are stored in `extended/ssh/authorized_keys` and copied to `/root/.ssh` and `/home/lava/.ssh`; you can also edit that file by hand and run `security-setup apply-ssh`. With LAN security on, password logins are refused, and SSH does not start while the file has no keys. Add a key before enabling LAN security.
 
 ### Locked out?
 
