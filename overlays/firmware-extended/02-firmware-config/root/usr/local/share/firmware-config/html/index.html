@@ -85,6 +85,27 @@
         .notice { display: none; background: var(--warning); color: #000; padding: 12px 16px; border-radius: 8px; margin-bottom: 16px; font-size: 14px; }
         .notice.visible { display: block; }
         .notice a { color: #000; font-weight: 600; }
+        .nav-bar { position: sticky; top: 0; z-index: 10; background: var(--bg); padding: 4px 0 12px; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+        .tabs { display: flex; gap: 6px; flex-wrap: wrap; }
+        .tab { background: var(--card); color: var(--muted); border: none; border-radius: 6px; padding: 8px 16px; font-size: 14px; font-weight: 600; cursor: pointer; }
+        .tab:hover { background: var(--item); color: #fff; }
+        .tab.active { background: var(--accent); color: #000; }
+        .search { flex: 1; min-width: 180px; background: var(--card); border: 1px solid #555; border-radius: 6px; padding: 8px 12px; color: var(--text); font-size: 14px; }
+        .search:focus { outline: none; border-color: var(--accent); }
+        .tab-panel { display: none; }
+        body[data-tab="overview"] .tab-panel[data-tab="overview"], body[data-tab="settings"] .tab-panel[data-tab="settings"], body[data-tab="actions"] .tab-panel[data-tab="actions"], body[data-tab="upgrade"] .tab-panel[data-tab="upgrade"] { display: block; }
+        body.searching[data-tab] .tab-panel[data-tab] { display: none; }
+        body.searching[data-tab] .tab-panel[data-tab="settings"], body.searching[data-tab] .tab-panel[data-tab="actions"] { display: block; }
+        .group-section.collapsible { margin-bottom: 8px; }
+        .group-section.collapsible .group-title { display: flex; align-items: center; gap: 8px; margin: 0; padding: 10px 12px; background: var(--item); border-radius: 6px; cursor: pointer; user-select: none; }
+        .group-section.collapsible .group-title:hover { background: var(--hover); }
+        .group-section.collapsible .caret::before { content: '\25B8'; display: inline-block; width: 12px; color: var(--accent); }
+        .group-section.collapsible.open .caret::before, .group-section.collapsible.searching .caret::before { content: '\25BE'; }
+        .group-count { margin-left: auto; font-size: 11px; background: var(--card); color: var(--muted); border-radius: 10px; padding: 1px 8px; }
+        .group-section.collapsible .group-body { display: none; padding-top: 8px; }
+        .group-section.collapsible.open .group-body, .group-section.collapsible.searching .group-body { display: block; }
+        .search-hidden { display: none !important; }
+        #search-empty { display: none; color: var(--muted); text-align: center; padding: 24px; font-size: 14px; }
     </style>
 </head>
 <body>
@@ -109,6 +130,18 @@
         </div>
 
         <div id="main-content">
+        <div class="nav-bar">
+            <div class="tabs" id="tabs">
+                <button class="tab" data-tab="overview" onclick="setTab('overview')">Overview</button>
+                <button class="tab" data-tab="settings" onclick="setTab('settings')">Settings</button>
+                <button class="tab" data-tab="actions" onclick="setTab('actions')">Actions</button>
+                <button class="tab" data-tab="upgrade" onclick="setTab('upgrade')">Upgrade</button>
+            </div>
+            <input type="search" class="search" id="search" placeholder="Search settings and actions..." autocomplete="off" oninput="applySearch()">
+        </div>
+        <div id="search-empty">No settings or actions match.</div>
+
+        <div class="tab-panel" data-tab="overview">
         <div class="card">
             <div class="card-header"><span class="card-title">Status</span></div>
             <div id="status-container" class="info-grid"><div class="loading"><span class="spinner"></span> Loading...</div></div>
@@ -124,16 +157,25 @@
             <div id="links-container" class="links-grid"><div class="loading"><span class="spinner"></span> Loading...</div></div>
         </div>
 
+        </div>
+
+        <div class="tab-panel" data-tab="settings">
         <div class="card">
             <div class="card-header"><span class="card-title">Settings</span></div>
             <div id="settings-container"><div class="loading"><span class="spinner"></span> Loading...</div></div>
         </div>
 
+        </div>
+
+        <div class="tab-panel" data-tab="actions">
         <div class="card">
             <div class="card-header"><span class="card-title">Actions</span></div>
             <div id="actions-container"><div class="loading"><span class="spinner"></span> Loading...</div></div>
         </div>
 
+        </div>
+
+        <div class="tab-panel" data-tab="upgrade">
         <div class="card" id="upgrade-card">
             <div class="card-header"><span class="card-title">Firmware Upgrade</span></div>
             <div class="input-row">
@@ -146,6 +188,7 @@
                 <input type="text" class="input" id="file-display" placeholder="Click to select or drag & drop file" readonly onclick="$('file-input').click()">
                 <button class="btn btn-warning" id="upload-btn" disabled onclick="uploadUpgrade()">Upload & Upgrade</button>
             </div>
+        </div>
         </div>
         </div>
     </div>
@@ -287,6 +330,73 @@
             }
         }
 
+        // ========================================
+        // Navigation: tabs, collapsible groups, search
+        // ========================================
+
+        function storeGet(key) { try { return localStorage.getItem(key); } catch (e) { return null; } }
+        function storeSet(key, val) { try { localStorage.setItem(key, val); } catch (e) { /* storage blocked */ } }
+
+        const TABS = ['overview', 'settings', 'actions', 'upgrade'];
+        let openGroups = new Set();
+        try { openGroups = new Set(JSON.parse(storeGet('fc-open-groups') || '[]')); } catch (e) { /* ignore */ }
+
+        function setTab(name, keepSearch) {
+            if (!TABS.includes(name)) name = 'overview';
+            document.body.dataset.tab = name;
+            document.querySelectorAll('#tabs .tab').forEach(b => b.classList.toggle('active', b.dataset.tab === name));
+            storeSet('fc-tab', name);
+            if (!keepSearch && $('search').value) {
+                $('search').value = '';
+                applySearch();
+            }
+        }
+
+        function toggleGroup(group) {
+            const key = decodeURIComponent(group.dataset.group);
+            if (group.classList.toggle('open')) openGroups.add(key); else openGroups.delete(key);
+            storeSet('fc-open-groups', JSON.stringify([...openGroups]));
+        }
+
+        function groupHtml(key, label, rowsHtml, count) {
+            const open = openGroups.has(key) ? ' open' : '';
+            return `<div class="group-section collapsible${open}" data-group="${encodeURIComponent(key)}">
+                <div class="group-title" onclick="toggleGroup(this.parentNode)"><span class="caret"></span>${label}<span class="group-count">${count}</span></div>
+                <div class="group-body">${rowsHtml}</div>
+            </div>`;
+        }
+
+        // Every word typed must appear in a row's label/description or its group's name
+        function applySearch() {
+            const terms = $('search').value.toLowerCase().split(/\s+/).filter(Boolean);
+            const searching = terms.length > 0;
+            document.body.classList.toggle('searching', searching);
+            let anyVisible = false;
+            document.querySelectorAll('.group-section.collapsible').forEach(group => {
+                const title = group.querySelector('.group-title').textContent.toLowerCase();
+                let groupVisible = false;
+                group.querySelectorAll('.row').forEach(row => {
+                    const label = row.querySelector('.row-label');
+                    const desc = row.querySelector('.row-desc');
+                    const text = `${title} ${label ? label.textContent : ''} ${desc ? desc.textContent : ''}`.toLowerCase();
+                    const match = terms.every(term => text.includes(term));
+                    row.classList.toggle('search-hidden', !match);
+                    if (match) groupVisible = true;
+                });
+                group.classList.toggle('search-hidden', searching && !groupVisible);
+                group.classList.toggle('searching', searching && groupVisible);
+                if (groupVisible) anyVisible = true;
+            });
+            $('search-empty').style.display = searching && !anyVisible ? 'block' : 'none';
+        }
+
+        document.addEventListener('keydown', e => {
+            if (e.key === 'Escape' && document.activeElement === $('search')) {
+                $('search').value = '';
+                applySearch();
+            }
+        });
+
         async function loadActions(containerId, apiPath, cardId) {
             const container = $(containerId);
             const card = cardId ? $(cardId) : null;
@@ -303,10 +413,11 @@
 
                 const groupActions = Object.values(grouped).flatMap(g => g.items);
                 actionsData.push(...groupActions);
-                container.innerHTML = Object.values(grouped).map(group =>
-                    `<div class="group-section">
-                        <div class="group-title">${group.label}</div>
-                        ${group.items.filter(action => !action.hidden || showHidden).map(action =>
+                const collapsible = containerId === 'actions-container';
+                container.innerHTML = Object.values(grouped).map(group => {
+                    const visible = group.items.filter(action => !action.hidden || showHidden);
+                    if (collapsible && visible.length === 0) return '';
+                    const rows = visible.map(action =>
                             `<div class="row" onclick="runAction('${action.id}')">
                                 <div class="row-label-wrap">
                                     <span class="row-label">${action.label}${action.help_url ? `<a class="row-help" href="${action.help_url}" target="_blank" onclick="event.stopPropagation()">↗</a>` : ''}</span>
@@ -314,9 +425,14 @@
                                 </div>
                                 <button class="btn btn-primary" style="pointer-events:none">Run</button>
                             </div>`
-                        ).join('')}
-                    </div>`
-                ).join('');
+                        ).join('');
+                    if (collapsible) return groupHtml('actions:' + group.label, group.label, rows, visible.length);
+                    return `<div class="group-section">
+                        <div class="group-title">${group.label}</div>
+                        ${rows}
+                    </div>`;
+                }).join('');
+                if (collapsible) applySearch();
             } catch (e) {
                 if (card) card.style.display = 'block';
                 container.innerHTML = `<div class="loading" style="color:var(--error)">Error: ${e.message}</div>`;
@@ -336,10 +452,10 @@
                 }
 
                 card.style.display = 'block';
-                container.innerHTML = groups.map(([_, group]) =>
-                    `<div class="group-section">
-                        <div class="group-title">${group.label}</div>
-                        ${group.items.filter(setting => !setting.hidden || showHidden).map(setting => {
+                container.innerHTML = groups.map(([_, group]) => {
+                    const visible = group.items.filter(setting => !setting.hidden || showHidden);
+                    if (visible.length === 0) return '';
+                    const rows = visible.map(setting => {
                             const options = Object.entries(setting.options)
                                 .filter(([optKey, optVal]) => !optVal.hidden || optKey === setting.current || showHidden)
                                 .map(([optKey, optVal]) => {
@@ -352,9 +468,10 @@
                                 </div>
                                 <select data-prev-value="${setting.current}" data-help-url="${setting.help_url || ''}" onchange="updateSetting('${setting.id}', this)">${options}</select>
                             </div>`;
-                        }).join('')}
-                    </div>`
-                ).join('');
+                        }).join('');
+                    return groupHtml('settings:' + group.label, group.label, rows, visible.length);
+                }).join('');
+                applySearch();
             } catch (e) {
                 container.innerHTML = `<div class="loading" style="color:var(--error)">Error: ${e.message}</div>`;
             }
@@ -870,6 +987,7 @@
         // ========================================
 
         if (showHidden) $('hidden-notice').classList.add('visible');
+        setTab(storeGet('fc-tab') || 'overview', true);
         refreshAll();
     </script>
 </body>
