@@ -64,6 +64,7 @@ server {
     }
 
     location /webcam/ {
+        auth_request /auth_check;
         postpone_output 0;
         proxy_buffering off;
         proxy_ignore_headers X-Accel-Buffering;
@@ -73,6 +74,7 @@ server {
     }
 
     location /webcam2/ {
+        auth_request /auth_check;
         postpone_output 0;
         proxy_buffering off;
         proxy_ignore_headers X-Accel-Buffering;
@@ -82,6 +84,7 @@ server {
     }
 
     location /webcam3/ {
+        auth_request /auth_check;
         postpone_output 0;
         proxy_buffering off;
         proxy_ignore_headers X-Accel-Buffering;
@@ -91,6 +94,7 @@ server {
     }
 
     location /webcam4/ {
+        auth_request /auth_check;
         postpone_output 0;
         proxy_buffering off;
         proxy_ignore_headers X-Accel-Buffering;

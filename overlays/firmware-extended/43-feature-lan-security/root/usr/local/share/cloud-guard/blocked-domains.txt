@@ -1,0 +1,8 @@
+# Snapmaker cloud and the TUTK/Kalay P2P relay used by unisrv, one domain per line.
+# security-setup answers these (and their subdomains) with 0.0.0.0 / :: when
+# [security] snapmaker_cloud is blocked.
+snapmaker.com
+snapmaker.cn
+iotcplatform.com
+kalay.net.cn
+kalayservice.com

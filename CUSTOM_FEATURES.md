@@ -20,3 +20,4 @@ both versions of it are kept.
 - Rolling `rolling-custom` pre-release built from every push to `develop-custom`
 - Build caches removed from the rootfs in CI builds (about 12 MB smaller)
 - Firmware upgrades skip MCUs that already run the new MCU firmware ([docs](docs/firmware_upgrade.md#mcu-firmware))
+- LAN security: login or API key for the web interface and camera, localhost-only Moonraker/MQTT, key-only SSH, and Snapmaker cloud blocked ([docs](docs/lan_security.md))

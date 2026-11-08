@@ -1,0 +1,21 @@
+#!/bin/sh
+# SPDX-License-Identifier: GPL-3.0-or-later
+# SPDX-PackageHomePage: https://github.com/paxx12-snapmaker-u1/SnapmakerU1-Extended-Firmware
+# SPDX-FileCopyrightText: Copyright (c) 2026 @paxx12
+
+# Runs before S50nginx, S50mosquitto, S50dropbear, S61moonraker and S80dnsmasq
+# so the generated tweaks and runtime config are in place when they start.
+
+case "$1" in
+    start|restart|reload)
+        /usr/local/sbin/security-setup apply
+        ;;
+    stop)
+        ;;
+    *)
+        echo "Usage: $0 {start|stop|restart|reload}"
+        exit 1
+        ;;
+esac
+
+exit $?

@@ -1,0 +1,104 @@
+#!/bin/bash
+# SPDX-License-Identifier: GPL-3.0-or-later
+# SPDX-PackageHomePage: https://github.com/paxx12-snapmaker-u1/SnapmakerU1-Extended-Firmware
+# SPDX-FileCopyrightText: Copyright (c) 2026 @paxx12
+
+# Applies the [security] section of extended2.cfg at boot (S49security), before
+# nginx, mosquitto, dropbear and Moonraker start.
+
+EXTENDED_CFG="/home/lava/printer_data/config/extended/extended2.cfg"
+EXTENDED_DIR="/home/lava/printer_data/config/extended"
+TWEAKS="/usr/local/share/firmware-config/tweaks/moonraker"
+MOONRAKER_DIR="$EXTENDED_DIR/moonraker"
+SSH_KEYS="$EXTENDED_DIR/ssh/authorized_keys"
+MQTT_CONF_SRC="/etc/mosquitto/mosquitto.conf"
+MQTT_CONF_RUN="/tmp/mosquitto-secure.conf"
+DNSMASQ_DIR="/tmp/dnsmasq.d"
+CLOUD_HOSTS="/usr/local/share/cloud-guard/blocked-domains.txt"
+
+log() { logger -t security-setup -- "$1"; echo "$1"; }
+
+cfg() { /usr/local/bin/extended-config.py get "$EXTENDED_CFG" security "$1" "$2"; }
+
+migrate() {
+    # Older builds kept the "authentication enabled" state only as a symlink
+    if [[ -L "$MOONRAKER_DIR/authorization.cfg" ]]; then
+        rm -f "$MOONRAKER_DIR/authorization.cfg"
+        if [[ "$(cfg auth "")" == "" ]]; then
+            /usr/local/bin/extended-config.py add "$EXTENDED_CFG" security auth true
+            log "Migrated legacy web authentication setting"
+        fi
+    fi
+}
+
+apply_moonraker() {
+    mkdir -p "$MOONRAKER_DIR"
+    if [[ "$AUTH" == "true" ]]; then
+        ln -sf "$TWEAKS/security-auth.cfg" "$MOONRAKER_DIR/security-auth.cfg"
+        ln -sf "$TWEAKS/security-bind-localhost.cfg" "$MOONRAKER_DIR/security-bind-localhost.cfg"
+    else
+        rm -f "$MOONRAKER_DIR/security-auth.cfg" "$MOONRAKER_DIR/security-bind-localhost.cfg"
+    fi
+}
+
+apply_mqtt() {
+    rm -f "$MQTT_CONF_RUN"
+    if [[ "$AUTH" == "true" ]]; then
+        # Snapmaker LAN pairing (8883) and the anonymous entry listener (1884)
+        # stay reachable by unisrv on this host only
+        sed -E 's/^listener (8883|1884)$/listener \1 127.0.0.1/' "$MQTT_CONF_SRC" > "$MQTT_CONF_RUN"
+        if ! grep -q '^listener 8883 127.0.0.1' "$MQTT_CONF_RUN" || ! grep -q '^listener 1884 127.0.0.1' "$MQTT_CONF_RUN"; then
+            log "ERROR: could not restrict MQTT listeners, leaving broker config unchanged"
+            rm -f "$MQTT_CONF_RUN"
+        fi
+    fi
+}
+
+apply_ssh() {
+    # Copy keys from the persistent config dir to where dropbear looks for them
+    local home
+    for home in /root /home/lava; do
+        mkdir -p "$home/.ssh"
+        if [[ -s "$SSH_KEYS" ]]; then
+            install -m 600 "$SSH_KEYS" "$home/.ssh/authorized_keys"
+        else
+            rm -f "$home/.ssh/authorized_keys"
+        fi
+        chmod 700 "$home/.ssh"
+    done
+    chown -R lava:lava /home/lava/.ssh 2>/dev/null || true
+}
+
+apply_dns() {
+    mkdir -p "$DNSMASQ_DIR"
+    rm -f "$DNSMASQ_DIR"/*.conf
+    [[ "$CLOUD" == "blocked" && -r "$CLOUD_HOSTS" ]] || return 0
+    local domain
+    while read -r domain; do
+        [[ -z "$domain" || "$domain" == \#* ]] && continue
+        echo "address=/$domain/0.0.0.0"
+        echo "address=/$domain/::"
+    done < "$CLOUD_HOSTS" > "$DNSMASQ_DIR/cloud-block.conf"
+}
+
+apply() {
+    AUTH=$(cfg auth false)
+    CLOUD=$(cfg snapmaker_cloud blocked)
+    migrate
+    AUTH=$(cfg auth false)
+    apply_moonraker
+    apply_mqtt
+    apply_ssh
+    apply_dns
+    log "Applied: auth=$AUTH snapmaker_cloud=$CLOUD"
+}
+
+case "$1" in
+    apply) apply ;;
+    auth-enabled) [[ "$(cfg auth false)" == "true" ]] ;;
+    ssh-keys) [[ -s "$SSH_KEYS" ]] ;;
+    *)
+        echo "Usage: $0 {apply|auth-enabled|ssh-keys}"
+        exit 1
+        ;;
+esac

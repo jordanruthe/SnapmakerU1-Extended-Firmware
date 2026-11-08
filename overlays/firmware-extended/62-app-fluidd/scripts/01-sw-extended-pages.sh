@@ -19,5 +19,8 @@ inject_extended_nav.sh "$ROOTFS_DIR/home/lava/fluidd/index.html"
 # Ask which filament each tool uses when starting a print, like the touchscreen
 inject_print_map.sh "$ROOTFS_DIR/home/lava/fluidd/index.html"
 
+# Mirror the login token into a cookie so the protected camera streams load
+inject_auth_cookie.sh "$ROOTFS_DIR/home/lava/fluidd/index.html"
+
 # Make the service worker replace its cached stock index.html with the edited one
 patch_sw_revision.sh "$ROOTFS_DIR/home/lava/fluidd/sw.js" "$ROOTFS_DIR/home/lava/fluidd/index.html"
