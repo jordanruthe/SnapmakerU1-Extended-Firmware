@@ -1,0 +1,38 @@
+--- a/etc/init.d/S50dropbear	2026-11-08 13:56:56.030811896 -0500
++++ b/etc/init.d/S50dropbear	2026-11-08 16:30:12.701624818 -0500
+@@ -25,6 +25,35 @@
+ 		return
+ 	fi
+ 
++	# With LAN security on, only key logins are accepted (never root/snapmaker)
++	if /usr/local/sbin/security-setup auth-enabled; then
++		if ! /usr/local/sbin/security-setup ssh-keys; then
++			log "LAN security is on but extended/ssh/authorized_keys is empty, not starting SSH."
++			return
++		fi
++		DROPBEAR_ARGS="$DROPBEAR_ARGS -s -g"
++	fi
++
++	# Keep the host keys across reboots and firmware upgrades (outside config/, so
++	# they stay out of config backups and the web file browser); /etc is reset
++	# then, which makes every client warn that the host key has changed.
++	# An existing key in /etc/dropbear is adopted so the identity doesn't change.
++	HOSTKEY_DIR="/home/lava/printer_data/ssh/host_keys"
++	mkdir -p "$HOSTKEY_DIR"
++	chmod 700 "$HOSTKEY_DIR"
++	for type in ed25519 ecdsa; do
++		key="$HOSTKEY_DIR/dropbear_${type}_host_key"
++		if [ ! -s "$key" ]; then
++			if [ -s "/etc/dropbear/dropbear_${type}_host_key" ]; then
++				cp "/etc/dropbear/dropbear_${type}_host_key" "$key"
++			else
++				/usr/bin/dropbearkey -t "$type" -f "$key" >/dev/null 2>&1
++			fi
++			chmod 600 "$key" 2>/dev/null
++		fi
++		[ -s "$key" ] && DROPBEAR_ARGS="$DROPBEAR_ARGS -r $key"
++	done
++
+ 	DROPBEAR_ARGS="$DROPBEAR_ARGS -R"
+ 
+ 	# If /etc/dropbear is a symlink to /var/run/dropbear, and

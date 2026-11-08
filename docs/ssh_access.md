@@ -15,6 +15,10 @@ Toggle SSH from the printer's web interface:
 
 > **LAN security**: with [LAN security](lan_security.md) enabled, SSH accepts public keys only and stays off until `extended/ssh/authorized_keys` has a key. The default password below no longer works.
 
+## Host keys
+
+The printer's SSH host keys are stored in `printer_data/ssh/host_keys/` (root only), so they survive reboots and firmware upgrades and your SSH client won't warn that the host key has changed. The folder is outside `config/`, so the keys are not part of firmware-config backups and are not visible in Fluidd's file browser. The first boot after installing this build creates them, or keeps the key already in `/etc/dropbear`. To get new keys, delete that folder and restart SSH.
+
 ## Credentials
 
 - User: `root` / Password: `snapmaker`
