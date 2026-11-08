@@ -1,0 +1,79 @@
+--- a/home/lava/bin/systemUpgrade.sh
++++ b/home/lava/bin/systemUpgrade.sh
+@@ -488,18 +488,31 @@
+ 			main_mcu_firmware_path="${UPGRADE_UNPACK_TMP_DIR}/at32f403a.bin"
+ 			;;
+ 	esac
++	# Read the running version first, so a main MCU that is already up to date is not flashed again
++	for ii in $(seq 1 6) ; do
++		main_mcu_version=$(get_mcu_version mcu0)
++		if [ x"$main_mcu_version" == x"unknown" ] ; then
++			sleep 1
++		else
++			break
++		fi
++	done
+ 	for i in $(seq 1 $retry_max) ; do
+-		upgrade_main_mcu "${main_mcu_firmware_path}"
+-		sleep 1
+-		# Retry max 6 times
+-		for ii in $(seq 1 6) ; do
+-			main_mcu_version=$(get_mcu_version mcu0)
+-			if [ x"$main_mcu_version" == x"unknown" ] ; then
+-				sleep 1
+-			else
+-				break
+-			fi
+-		done
++		if [ x"$mcu_version_new" == x"$main_mcu_version" ] ; then
++			log_info "Main MCU already at version $main_mcu_version, skip upgrade."
++		else
++			upgrade_main_mcu "${main_mcu_firmware_path}"
++			sleep 1
++			# Retry max 6 times
++			for ii in $(seq 1 6) ; do
++				main_mcu_version=$(get_mcu_version mcu0)
++				if [ x"$main_mcu_version" == x"unknown" ] ; then
++					sleep 1
++				else
++					break
++				fi
++			done
++		fi
+ 		if [ x"$mcu_version_new" == x"$main_mcu_version" ] ; then
+ 			have_failure="No"
+ 			# Add the successful MCU
+@@ -554,17 +567,22 @@
+ 				esac
+ 				break
+ 			fi
+-			upgrade_head_mcu $head ${UPGRADE_UNPACK_TMP_DIR}/at32f415.bin
+-			sleep 2
+-			# Retry max 6 times
+-			for ii in $(seq 1 6) ; do
+-				head_mcu_version=$(get_mcu_version $head)
+-				if [ x"$head_mcu_version" == x"unknown" ] ; then
+-					sleep 1
+-				else
+-					break
+-				fi
+-			done
++			# Do not flash a print head MCU that is already up to date
++			if [ x"$mcu_version_new" == x"$head_mcu_version" ] ; then
++				log_info "Print head $head already at version $head_mcu_version, skip upgrade."
++			else
++				upgrade_head_mcu $head ${UPGRADE_UNPACK_TMP_DIR}/at32f415.bin
++				sleep 2
++				# Retry max 6 times
++				for ii in $(seq 1 6) ; do
++					head_mcu_version=$(get_mcu_version $head)
++					if [ x"$head_mcu_version" == x"unknown" ] ; then
++						sleep 1
++					else
++						break
++					fi
++				done
++			fi
+ 			if [ x"$mcu_version_new" == x"$head_mcu_version" ] ; then
+ 				have_failure="No"
+ 				# Add this successful MCU

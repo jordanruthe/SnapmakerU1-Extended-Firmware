@@ -59,3 +59,17 @@ locally before any network I/O happens.
 
 See [`overlays/firmware-extended/40-feature-upgrade-firmware`](https://github.com/paxx12/SnapmakerU1/tree/main/overlays/firmware-extended/40-feature-upgrade-firmware)
 for the implementation.
+
+## MCU Firmware
+
+Stock firmware flashes the main MCU and every print head MCU on each
+upgrade. Extended firmware skips any MCU that already runs the MCU firmware
+in the upgrade file, which makes upgrades between builds of the same stock
+version noticeably faster. MCUs that differ are flashed as before.
+
+The upgrade is performed by the firmware being upgraded from, so the skip
+applies starting with the upgrade after the first one to an Extended build
+that includes it.
+
+See [`overlays/firmware-extended/45-feature-skip-current-mcu`](https://github.com/paxx12/SnapmakerU1/tree/main/overlays/firmware-extended/45-feature-skip-current-mcu)
+for the implementation.
