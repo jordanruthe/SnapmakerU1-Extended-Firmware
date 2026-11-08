@@ -13,6 +13,8 @@ Toggle SSH from the printer's web interface:
 1. Open `http://<printer-ip>/firmware-config/` in a browser.
 2. Scroll down to the SSH access section and enable it.
 
+> **LAN security**: with [LAN security](lan_security.md) enabled, SSH accepts public keys only and stays off until `extended/ssh/authorized_keys` has a key. The default password below no longer works.
+
 ## Credentials
 
 - User: `root` / Password: `snapmaker`

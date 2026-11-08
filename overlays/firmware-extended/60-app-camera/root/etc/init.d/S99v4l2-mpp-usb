@@ -13,6 +13,11 @@ if [ "$CAMERA_LOGS" = "syslog" ]; then
     CMD_FAKE_SERVICE_ARGS="$CMD_FAKE_SERVICE_ARGS --syslog"
 fi
 RTSP_ENABLED=$(/usr/local/bin/extended-config.py get "$EXTENDED_CFG" camera rtsp false)
+if [ "$RTSP_ENABLED" = "true" ] && /usr/local/sbin/security-setup auth-enabled; then
+    # stream-rtsp has no login and cannot bind to localhost
+    echo "RTSP is disabled while LAN security (authentication) is enabled."
+    RTSP_ENABLED=false
+fi
 
 USB_RESOLUTION=$(/usr/local/bin/extended-config.py get "$EXTENDED_CFG" camera usb_resolution 1080p25)
 case "$USB_RESOLUTION" in

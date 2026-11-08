@@ -1,0 +1,18 @@
+--- a/etc/init.d/S50dropbear	2026-11-08 13:56:56.030811896 -0500
++++ b/etc/init.d/S50dropbear	2026-11-08 13:56:56.067234568 -0500
+@@ -25,6 +25,15 @@
+ 		return
+ 	fi
+ 
++	# With LAN security on, only key logins are accepted (never root/snapmaker)
++	if /usr/local/sbin/security-setup auth-enabled; then
++		if ! /usr/local/sbin/security-setup ssh-keys; then
++			log "LAN security is on but extended/ssh/authorized_keys is empty, not starting SSH."
++			return
++		fi
++		DROPBEAR_ARGS="$DROPBEAR_ARGS -s -g"
++	fi
++
+ 	DROPBEAR_ARGS="$DROPBEAR_ARGS -R"
+ 
+ 	# If /etc/dropbear is a symlink to /var/run/dropbear, and

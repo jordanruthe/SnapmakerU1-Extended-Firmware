@@ -1,0 +1,20 @@
+--- a/etc/init.d/S50mosquitto	2026-11-08 13:56:56.030753527 -0500
++++ b/etc/init.d/S50mosquitto	2026-11-08 13:56:56.067002474 -0500
+@@ -1,13 +1,16 @@
+ #!/bin/sh
+ 
+ PIDFILE=/var/run/mosquitto.pid
++CONF=/etc/mosquitto/mosquitto.conf
++# security-setup writes a copy with the LAN listeners bound to localhost
++[ -s /tmp/mosquitto-secure.conf ] && CONF=/tmp/mosquitto-secure.conf
+ 
+ start() {
+ 	printf "Starting mosquitto: "
+ 	ulimit -c 102400
+ 	start-stop-daemon -S -q -m -b -p "$PIDFILE" \
+ 		--exec /usr/sbin/mosquitto \
+-		-- -c /etc/mosquitto/mosquitto.conf
++		-- -c "$CONF"
+ 	[ $? = 0 ] && echo "OK" || echo "FAIL"
+ }
+ stop() {

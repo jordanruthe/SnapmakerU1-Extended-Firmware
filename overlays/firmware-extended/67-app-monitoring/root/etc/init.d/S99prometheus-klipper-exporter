@@ -16,6 +16,11 @@ start() {
         return
     fi
 
+    if /usr/local/sbin/security-setup auth-enabled; then
+        # Scrape via https://<printer>/metrics with an API key; the port itself stays local
+        EXPORTER_ADDRESS="127.0.0.1:9101"
+    fi
+
     echo "Starting $NAME: "
     if [ -f "$PIDFILE" ] && kill -0 $(cat "$PIDFILE") 2>/dev/null; then
         echo "already running"

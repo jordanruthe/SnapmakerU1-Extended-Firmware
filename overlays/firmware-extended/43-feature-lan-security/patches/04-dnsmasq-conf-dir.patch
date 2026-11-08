@@ -1,0 +1,9 @@
+--- a/etc/dnsmasq.conf	2026-11-08 13:56:56.032687478 -0500
++++ b/etc/dnsmasq.conf	2026-11-08 13:56:56.067384346 -0500
+@@ -17,3 +17,6 @@
+ 
+ # A record is approximately 100 bytes in size, and 5000 records would occupy about 500KB.
+ cache-size=5000
++
++# Domains blocked by security-setup (S49security), generated at boot
++conf-dir=/tmp/dnsmasq.d,*.conf

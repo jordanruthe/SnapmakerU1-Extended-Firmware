@@ -3,31 +3,36 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 @paxx12
 
 settings:
-  remote_access:
+  security:
+    label: Security
     items:
-      authorization:
-        label: Web Authentication (Experimental)
-        description: Password-protect access to Fluidd and Firmware Config via Moonraker authentication.
+      auth:
+        label: LAN Security (Authentication)
+        description: Require a login or API key for the web interface, camera and metrics. Only the printer itself is trusted. Also closes Snapmaker LAN MQTT to the network, makes SSH key-only and turns RTSP off. Reboot afterwards to apply everything.
         get_cmd:
-          - bash
-          - -c
-          - test -f /oem/printer_data/config/extended/moonraker/authorization.cfg && echo "enabled" || echo "disabled"
+          - /usr/local/bin/extended-config.py
+          - get
+          - /home/lava/printer_data/config/extended/extended2.cfg
+          - security
+          - auth
+          - "false"
         options:
-          enabled:
+          "true":
             label: Enabled
-            confirm: "Enable authentication? A new admin user with random password will be created. You will need to log in to access Fluidd and Firmware Config. Note: This is experimental and only works with Fluidd. Mainsail does not support this feature."
+            confirm: "Enable LAN security? An admin user with a random password will be created and every device on your network must log in or use the API key. SSH needs a public key in extended/ssh/authorized_keys. RTSP is turned off. Works with Fluidd only."
             cmd:
               - bash
               - -c
               - |
-                FRONTEND=$(/usr/local/bin/extended-config.py get /home/lava/printer_data/config/extended/extended2.cfg web frontend fluidd)
+                CFG=/home/lava/printer_data/config/extended/extended2.cfg
+                FRONTEND=$(/usr/local/bin/extended-config.py get $CFG web frontend fluidd)
                 if [ "$FRONTEND" = "mainsail" ]; then
                   echo "ERROR: Authentication requires Fluidd."
                   echo "Mainsail does not support Moonraker authentication."
                   echo "Please switch to Fluidd first."
                   exit 1
                 fi
-                CLOUD=$(/usr/local/bin/extended-config.py get /home/lava/printer_data/config/extended/extended2.cfg remote_access cloud none)
+                CLOUD=$(/usr/local/bin/extended-config.py get $CFG remote_access cloud none)
                 if [ "$CLOUD" = "octoeverywhere" ]; then
                   echo "ERROR: OctoEverywhere companion mode is incompatible with authentication."
                   echo "Disable OctoEverywhere first to enable authentication."
@@ -36,9 +41,8 @@ settings:
                 URL="http://127.0.0.1:7125"
                 echo "Deleting existing admin user..."
                 /usr/local/bin/curl -s -X DELETE "$URL/access/user" -H "Content-Type: application/json" -d '{"username": "admin"}' > /dev/null 2>&1
-                echo "Enabling force_logins in Moonraker..."
-                mkdir -p /oem/printer_data/config/extended/moonraker
-                ln -sf /usr/local/share/firmware-config/tweaks/moonraker/authorization.cfg /oem/printer_data/config/extended/moonraker/authorization.cfg
+                /usr/local/bin/extended-config.py add $CFG security auth true
+                /usr/local/sbin/security-setup apply
                 echo "Restarting Moonraker..."
                 /etc/init.d/S61moonraker restart
                 echo "Waiting for Moonraker to restart..."
@@ -55,25 +59,82 @@ settings:
                   echo "  Password: $PASSWORD"
                   echo "============================================"
                   echo ""
-                  echo "You can change your password in Fluidd"
-                  echo "under Profile > Change Password."
-                  echo ""
-                  echo "If you forget your password, create a file"
-                  echo "named 'extended-recover.txt' on a USB drive"
-                  echo "and reboot to reset extended configuration."
-                  echo ""
+                  echo "Change the password in Fluidd under Profile."
+                  echo "For Orca / Mobileraker use the API key action."
+                  echo "Reboot the printer to finish applying (MQTT, SSH, camera)."
+                  echo "If you get locked out, put 'extended-recover.txt' on a USB drive and reboot."
                 else
                   echo "Warning: Could not create admin user"
                   echo "$RESULT"
                 fi
-          disabled:
+          "false":
             label: Disabled
-            confirm: "Disable authentication? Anyone on your network will be able to access the printer."
+            confirm: "Disable LAN security? Anyone on your network will be able to control the printer."
             cmd:
               - bash
               - -xc
               - |
-                rm -f /oem/printer_data/config/extended/moonraker/authorization.cfg &&
-                echo "Authentication disabled. Restarting Moonraker..." &&
+                /usr/local/bin/extended-config.py add /home/lava/printer_data/config/extended/extended2.cfg security auth false &&
+                /usr/local/sbin/security-setup apply &&
+                echo "Authentication disabled. Restarting Moonraker (reboot to finish)..." &&
                 /etc/init.d/S61moonraker restart
-        default: disabled
+        default: "false"
+
+      snapmaker_cloud:
+        label: Snapmaker Cloud
+        description: Blocked keeps the printer in LAN mode and stops the Snapmaker software from reaching any non-local address (cloud API, TUTK relay). Reboot to apply.
+        get_cmd:
+          - /usr/local/bin/extended-config.py
+          - get
+          - /home/lava/printer_data/config/extended/extended2.cfg
+          - security
+          - snapmaker_cloud
+          - blocked
+        options:
+          blocked:
+            label: Blocked
+            cmd:
+              - bash
+              - -xc
+              - |
+                /usr/local/bin/extended-config.py add /home/lava/printer_data/config/extended/extended2.cfg security snapmaker_cloud blocked &&
+                /usr/local/sbin/security-setup apply &&
+                /etc/init.d/S80dnsmasq restart &&
+                echo "Reboot the printer to apply."
+          allowed:
+            label: Allowed
+            confirm: "Allow the Snapmaker software to contact Snapmaker's cloud again?"
+            cmd:
+              - bash
+              - -xc
+              - |
+                /usr/local/bin/extended-config.py add /home/lava/printer_data/config/extended/extended2.cfg security snapmaker_cloud allowed &&
+                /usr/local/sbin/security-setup apply &&
+                /etc/init.d/S80dnsmasq restart &&
+                echo "Reboot the printer to apply."
+        default: blocked
+
+actions:
+  security:
+    label: Security
+    items:
+      show-api-key:
+        label: Show API Key
+        description: Show the Moonraker API key for Orca, Mobileraker and scripts (send it as the X-Api-Key header).
+        cmd:
+          - /usr/local/bin/curl
+          - -s
+          - http://127.0.0.1:7125/access/api_key
+        message: "API key (the value of \"result\"):"
+
+      regenerate-api-key:
+        label: Regenerate API Key
+        description: Create a new API key. Devices using the old key stop working.
+        confirm: true
+        cmd:
+          - /usr/local/bin/curl
+          - -s
+          - -X
+          - POST
+          - http://127.0.0.1:7125/access/api_key
+        message: "New API key (the value of \"result\"):"
